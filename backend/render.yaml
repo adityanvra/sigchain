@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: sigchain-uad-backend
+    runtime: node
+    rootDir: backend
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: CORS_ORIGINS
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: SEPOLIA_RPC_URL
+        sync: false
+      - key: CHAIN_ID
+        value: "11155111"
+      - key: CONTRACT_ADDRESS
+        sync: false
+      - key: BLOCK_EXPLORER
+        value: https://sepolia.etherscan.io
+      - key: MAX_UPLOAD_MB
+        value: "20"
+      - key: PUBLIC_VERIFY_URL
+        sync: false
