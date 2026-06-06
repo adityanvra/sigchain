@@ -9,7 +9,7 @@ import {
 } from "../controllers/documentController";
 import { prepareSign, confirmSign } from "../controllers/signatureController";
 import { authenticate, authorize } from "../middleware/auth";
-import { uploadPdf } from "../middleware/upload";
+import { uploadPdfMemory } from "../middleware/upload";
 
 const router = Router();
 
@@ -19,7 +19,7 @@ router.use(authenticate);
 router.post(
   "/",
   authorize("admin", "staff_akademik", "staff_administrasi"),
-  uploadPdf.single("file"),
+  uploadPdfMemory.single("file"),
   uploadDocument
 );
 router.get("/", listDocuments);

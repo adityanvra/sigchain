@@ -1,11 +1,10 @@
 import { Request, Response } from "express";
-import fs from "fs";
 import { z } from "zod";
 import { DocumentModel } from "../models/Document";
 import { Signature } from "../models/Signature";
 import { ApiError } from "../utils/ApiError";
 import { asyncHandler } from "../utils/asyncHandler";
-import { sha256File } from "../services/hashService";
+import { sha256Buffer } from "../services/hashService";
 import { recordAudit } from "../services/auditService";
 import { qrPngBuffer, qrDataUrl, verifyUrlFor } from "../services/qrService";
 import { blockchain } from "../services/blockchainService";
@@ -24,12 +23,13 @@ export const uploadDocument = asyncHandler(async (req: Request, res: Response) =
   if (!req.file) throw ApiError.badRequest("File PDF wajib diunggah");
 
   const meta = uploadMetaSchema.parse(req.body);
-  const hash = await sha256File(req.file.path);
+  const buffer = req.file.buffer;
+  const hash = sha256Buffer(buffer);
 
   const doc = await DocumentModel.create({
     namaDokumen: meta.namaDokumen?.trim() || req.file.originalname,
     description: meta.description,
-    filePath: req.file.path,
+    fileData: buffer,
     fileName: req.file.originalname,
     mimeType: req.file.mimetype,
     fileSize: req.file.size,
@@ -46,6 +46,7 @@ export const uploadDocument = asyncHandler(async (req: Request, res: Response) =
     req,
   });
 
+  doc.fileData = undefined;
   res.status(201).json({ success: true, document: doc });
 });
 
@@ -91,17 +92,17 @@ export const getDocument = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const downloadDocument = asyncHandler(async (req: Request, res: Response) => {
-  const doc = await DocumentModel.findById(req.params.id);
+  const doc = await DocumentModel.findById(req.params.id).select("+fileData");
   if (!doc) throw ApiError.notFound("Dokumen tidak ditemukan");
   if (req.user!.role !== "admin" && String(doc.uploader) !== req.user!.sub) {
     throw ApiError.forbidden();
   }
-  if (!fs.existsSync(doc.filePath)) throw ApiError.notFound("Berkas tidak tersedia di server");
+  if (!doc.fileData) throw ApiError.notFound("Berkas tidak tersedia di server");
 
   const disposition = req.query.download === "1" ? "attachment" : "inline";
-  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Type", doc.mimeType || "application/pdf");
   res.setHeader("Content-Disposition", `${disposition}; filename="${doc.fileName}"`);
-  fs.createReadStream(doc.filePath).pipe(res);
+  res.send(doc.fileData);
 });
 
 export const documentQrPng = asyncHandler(async (req: Request, res: Response) => {
@@ -119,13 +120,6 @@ export const deleteDocument = asyncHandler(async (req: Request, res: Response) =
     throw ApiError.forbidden();
   }
 
-  if (fs.existsSync(doc.filePath)) {
-    try {
-      fs.unlinkSync(doc.filePath);
-    } catch {
-      /* ignore file removal failure */
-    }
-  }
   await Signature.deleteMany({ documentId: doc._id });
   await doc.deleteOne();
 

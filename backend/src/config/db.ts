@@ -2,14 +2,29 @@ import mongoose from "mongoose";
 import { env } from "./env";
 
 let memoryServerStarted = false;
+// Cache the connection promise so warm serverless invocations reuse it.
+let connectionPromise: Promise<void> | null = null;
 
 /**
  * Connects to MongoDB. When MONGODB_URI is not configured we transparently spin
  * up an in-memory MongoDB (mongodb-memory-server) so the entire backend keeps
  * working for demos without any external account. If that package is not
  * installed, we throw a helpful error.
+ *
+ * Safe to call repeatedly (e.g. on every serverless request): the underlying
+ * connection is established only once and reused.
  */
 export async function connectDatabase(): Promise<void> {
+  if (mongoose.connection.readyState === 1) return;
+  if (connectionPromise) return connectionPromise;
+  connectionPromise = doConnect().catch((err) => {
+    connectionPromise = null;
+    throw err;
+  });
+  return connectionPromise;
+}
+
+async function doConnect(): Promise<void> {
   mongoose.set("strictQuery", true);
 
   if (!env.DB_MOCK_MODE) {

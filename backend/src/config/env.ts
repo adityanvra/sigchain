@@ -30,7 +30,7 @@ export const env = {
   BLOCK_EXPLORER: process.env.BLOCK_EXPLORER || "https://sepolia.etherscan.io",
 
   UPLOAD_DIR: process.env.UPLOAD_DIR || "uploads",
-  MAX_UPLOAD_MB: asInt(process.env.MAX_UPLOAD_MB, 20),
+  MAX_UPLOAD_MB: asInt(process.env.MAX_UPLOAD_MB, 15),
 
   PUBLIC_VERIFY_URL: process.env.PUBLIC_VERIFY_URL || "http://localhost:5173/verify",
 
