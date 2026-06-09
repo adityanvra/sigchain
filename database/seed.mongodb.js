@@ -1,16 +1,3 @@
-/**
- * SIGCHAIN-UAD — manual seed for MongoDB Shell (mongosh) or Compass.
- *
- * NOTE: passwords below are PRE-HASHED bcrypt values for the string
- * "password123" (cost 12). If you change the password you must regenerate the
- * hash (e.g. with `npx bcryptjs`), because the backend compares using bcrypt.
- *
- * Usage:
- *   mongosh "mongodb+srv://USER:PASS@cluster/sigchain" database/seed.mongodb.js
- *
- * The RECOMMENDED way is `cd backend && npm run seed` which hashes correctly.
- */
-
 const bcryptHashOfPassword123 = "$2a$12$u1Q3Qr0m8b8m1m9oQ PLACEHOLDER — use `npm run seed`";
 
 db = db.getSiblingDB("sigchain");
@@ -65,7 +52,6 @@ db.users.updateOne(
   { upsert: true }
 );
 
-// Helpful indexes (Mongoose also creates these automatically).
 db.users.createIndex({ email: 1 }, { unique: true });
 db.documents.createIndex({ hashDokumen: 1 });
 db.documents.createIndex({ uploader: 1 });
