@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { Loader2, ShieldHalf, Lock, Mail, ShieldCheck, FileLock2, Fingerprint } from "lucide-react";
+import { Loader2, Lock, Mail, ShieldCheck, FileLock2, Fingerprint } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,7 +40,7 @@ export function LoginPage() {
         <div className="absolute inset-0 opacity-20 [background-image:radial-gradient(circle_at_1px_1px,white_1px,transparent_0)] [background-size:24px_24px]" />
         <div className="relative flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/15 backdrop-blur">
-            <ShieldHalf className="h-6 w-6" />
+            <img src="/logo-uad.png" alt="Logo UAD" className="h-6 w-6 object-contain" />
           </div>
           <div>
             <p className="text-lg font-bold tracking-tight">SIGCHAIN-UAD</p>
@@ -82,7 +82,7 @@ export function LoginPage() {
         <div className="w-full max-w-md space-y-8 rounded-2xl border bg-card p-8 shadow-xl">
           <div className="space-y-2 text-center lg:hidden">
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-              <ShieldHalf className="h-6 w-6" />
+              <img src="/logo-uad.png" alt="Logo UAD" className="h-6 w-6 object-contain" />
             </div>
             <p className="text-lg font-bold">SIGCHAIN-UAD</p>
           </div>

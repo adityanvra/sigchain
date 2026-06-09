@@ -1,5 +1,4 @@
 import { Link, useParams } from "react-router-dom";
-import { ShieldHalf } from "lucide-react";
 import { VerifyPanel } from "@/components/VerifyPanel";
 import { Button } from "@/components/ui/button";
 
@@ -11,9 +10,7 @@ export function PublicVerifyPage() {
       <header className="border-b bg-card/70 backdrop-blur">
         <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-4">
           <div className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <ShieldHalf className="h-5 w-5" />
-            </div>
+              <img src="/logo-uad.png" alt="Logo UAD" className="h-5 w-5 object-contain" />
             <div className="leading-tight">
               <p className="text-sm font-bold">SIGCHAIN-UAD</p>
               <p className="text-[10px] uppercase tracking-wide text-muted-foreground">

@@ -6,7 +6,6 @@ import {
   ShieldCheck,
   ScrollText,
   Users,
-  ShieldHalf,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
@@ -34,9 +33,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <aside className="flex h-full w-64 flex-col border-r bg-card">
       <div className="flex items-center gap-2 px-6 py-5">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-          <ShieldHalf className="h-5 w-5" />
-        </div>
+        <img src="/logo-uad.png" alt="Logo UAD" className="h-9 w-9 rounded-lg object-contain" />
         <div className="leading-tight">
           <p className="text-sm font-bold tracking-tight">SIGCHAIN-UAD</p>
           <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
