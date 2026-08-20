@@ -88,7 +88,7 @@ export function UploadPage() {
                 </div>
                 <div>
                   <p className="font-medium">Klik atau jatuhkan file PDF di sini</p>
-                  <p className="text-sm text-muted-foreground">Maksimal 20 MB · hanya PDF</p>
+                  <p className="text-sm text-muted-foreground">Maksimal 15 MB · hanya PDF</p>
                 </div>
                 <input
                   type="file"
