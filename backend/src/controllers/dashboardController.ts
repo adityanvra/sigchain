@@ -4,7 +4,7 @@ import { AuditTrail } from "../models/AuditTrail";
 import { asyncHandler } from "../utils/asyncHandler";
 
 export const dashboardStats = asyncHandler(async (req: Request, res: Response) => {
-  const scope = req.user!.role === "admin" ? {} : { uploader: req.user!.sub };
+  const scope = (req.user!.role === "admin" || req.user!.role === "staff_akademik") ? {} : { uploader: req.user!.sub };
 
   const [total, signed, unsigned, recentDocs] = await Promise.all([
     DocumentModel.countDocuments(scope),

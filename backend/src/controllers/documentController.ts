@@ -14,9 +14,10 @@ const uploadMetaSchema = z.object({
   description: z.string().max(1000).optional(),
 });
 
-/** Only admins see all documents; staff see their own uploads. */
+/** Admins and staff_akademik see all documents; staff_administrasi see their own uploads. */
 function scopeFilter(req: Request) {
-  return req.user!.role === "admin" ? {} : { uploader: req.user!.sub };
+  if (req.user!.role === "admin" || req.user!.role === "staff_akademik") return {};
+  return { uploader: req.user!.sub };
 }
 
 export const uploadDocument = asyncHandler(async (req: Request, res: Response) => {
@@ -69,7 +70,7 @@ export const getDocument = asyncHandler(async (req: Request, res: Response) => {
     "nama email role walletAddress"
   );
   if (!doc) throw ApiError.notFound("Dokumen tidak ditemukan");
-  if (req.user!.role !== "admin" && String(doc.uploader._id) !== req.user!.sub) {
+  if (req.user!.role !== "admin" && req.user!.role !== "staff_akademik" && String(doc.uploader._id) !== req.user!.sub) {
     throw ApiError.forbidden();
   }
 
@@ -94,7 +95,7 @@ export const getDocument = asyncHandler(async (req: Request, res: Response) => {
 export const downloadDocument = asyncHandler(async (req: Request, res: Response) => {
   const doc = await DocumentModel.findById(req.params.id).select("+fileData");
   if (!doc) throw ApiError.notFound("Dokumen tidak ditemukan");
-  if (req.user!.role !== "admin" && String(doc.uploader) !== req.user!.sub) {
+  if (req.user!.role !== "admin" && req.user!.role !== "staff_akademik" && String(doc.uploader) !== req.user!.sub) {
     throw ApiError.forbidden();
   }
   if (!doc.fileData) throw ApiError.notFound("Berkas tidak tersedia di server");
