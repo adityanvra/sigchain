@@ -200,7 +200,7 @@ Tes smart contract: `cd smart_contract && npm test` (9 test lulus).
 
 SHA-256 hashing · JWT (HS256) · bcrypt (cost 12) · Helmet (proteksi XSS/header) ·
 express-mongo-sanitize (cegah NoSQL injection) · rate limiting · validasi input
-(Zod) · upload PDF-only (cek mime + ekstensi, maks **15 MB**) · CORS allowlist ·
+(Zod) · upload PDF-only (cek mime + ekstensi, maks **4.5 MB**) · CORS allowlist ·
 siap HTTPS.
 
 ---

@@ -16,6 +16,6 @@ const pdfFilter: multer.Options["fileFilter"] = (_req, file, cb) => {
  */
 export const uploadPdfMemory = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: env.MAX_UPLOAD_MB * 1024 * 1024 },
+  limits: { fileSize: Math.floor(env.MAX_UPLOAD_MB * 1024 * 1024) },
   fileFilter: pdfFilter,
 });

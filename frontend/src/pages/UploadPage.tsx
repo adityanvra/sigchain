@@ -61,13 +61,20 @@ export function UploadPage() {
 
   async function processFiles(files: FileList | File[]) {
     const validFiles: File[] = [];
+    const MAX_FILE_BYTES = 4.5 * 1024 * 1024; // 4.5 MB
+
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
-      if (f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf")) {
-        validFiles.push(f);
-      } else {
+      const isPdf = f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf");
+      if (!isPdf) {
         toast.error(`"${f.name}" dilewati: Hanya format PDF yang diperbolehkan`);
+        continue;
       }
+      if (f.size > MAX_FILE_BYTES) {
+        toast.error(`"${f.name}" dilewati: Ukuran berkas (${formatBytes(f.size)}) melebihi batas maksimal 4.5 MB`);
+        continue;
+      }
+      validFiles.push(f);
     }
 
     if (validFiles.length === 0) return;
@@ -224,7 +231,7 @@ export function UploadPage() {
               <div>
                 <p className="font-semibold">Klik atau seret berkas PDF ke sini</p>
                 <p className="text-sm text-muted-foreground">
-                  Mendukung upload tunggal &amp; banyak berkas sekaligus (Maksimal 15 MB per berkas)
+                  Mendukung upload tunggal &amp; banyak berkas sekaligus (Maksimal 4.5 MB per berkas)
                 </p>
               </div>
               <input
