@@ -25,6 +25,7 @@ export interface DocumentItem {
   blockchainTimestamp?: string | null;
   status: DocStatus;
   uploader: User | string;
+  assignedTo?: User | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -75,6 +76,7 @@ export interface VerifyResult {
     blockNumber?: number | null;
     blockchainTimestamp?: string | null;
     uploader?: User;
+    assignedTo?: User | null;
     createdAt?: string;
   } | null;
   signatures: SignatureItem[];

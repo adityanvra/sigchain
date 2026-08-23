@@ -15,6 +15,7 @@ export interface IDocument extends MongoDoc {
   blockNumber?: number;
   blockchainTimestamp?: Date;
   uploader: Types.ObjectId;
+  assignedTo?: Types.ObjectId;
   status: DocStatus;
   createdAt: Date;
   updatedAt: Date;
@@ -35,6 +36,7 @@ const documentSchema = new Schema<IDocument>(
     blockNumber: { type: Number, default: null },
     blockchainTimestamp: { type: Date, default: null },
     uploader: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    assignedTo: { type: Schema.Types.ObjectId, ref: "User", default: null, index: true },
     status: {
       type: String,
       enum: ["UNSIGNED", "SIGNED"],

@@ -32,6 +32,13 @@ export const listUsers = asyncHandler(async (_req: Request, res: Response) => {
   res.json({ success: true, users });
 });
 
+export const listAkademisi = asyncHandler(async (_req: Request, res: Response) => {
+  const users = await User.find({ role: "staff_akademik" })
+    .select("_id nama email role walletAddress")
+    .sort({ nama: 1 });
+  res.json({ success: true, akademisi: users });
+});
+
 export const createUser = asyncHandler(async (req: Request, res: Response) => {
   const data = req.body as z.infer<typeof createUserSchema>;
   const exists = await User.findOne({ email: data.email.toLowerCase() });

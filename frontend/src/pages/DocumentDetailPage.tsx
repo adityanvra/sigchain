@@ -13,6 +13,8 @@ import {
   Wallet,
   Hash,
   Eye,
+  UserCheck,
+  UserPlus,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,9 +24,17 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { StatusBadge } from "@/components/StatusBadge";
 import { CopyButton } from "@/components/CopyButton";
 import { api, apiErrorMessage, getToken } from "@/lib/api";
@@ -57,10 +67,19 @@ export function DocumentDetailPage() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
+  // Assign dialog state
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [akademisiList, setAkademisiList] = useState<User[]>([]);
+  const [selectedAssignee, setSelectedAssignee] = useState<string>("unassigned");
+  const [savingAssign, setSavingAssign] = useState(false);
+
   const load = useCallback(async () => {
     try {
       const { data } = await api.get(`/documents/${id}`);
       setData(data);
+      const currentAssignee = data?.document.assignedTo as User | string | undefined;
+      const assigneeId = typeof currentAssignee === "object" ? currentAssignee?._id : currentAssignee;
+      setSelectedAssignee(assigneeId || "unassigned");
     } catch (err) {
       toast.error(apiErrorMessage(err, "Gagal memuat dokumen"));
       navigate("/documents");
@@ -73,9 +92,63 @@ export function DocumentDetailPage() {
     load();
   }, [load]);
 
+  // Load Akademisi list for assignment dialog
+  useEffect(() => {
+    async function fetchAkademisi() {
+      try {
+        const { data } = await api.get("/users/akademisi");
+        setAkademisiList(data.akademisi || []);
+      } catch (err) {
+        console.error("Gagal memuat daftar akademisi:", err);
+      }
+    }
+    fetchAkademisi();
+  }, []);
+
   const fileUrl = `${config.apiUrl}/documents/${id}/file`;
-  const canSign = user && (user.role === "admin" || user.role === "staff_akademik");
-  const uploader = data?.document.uploader as User | undefined;
+  const doc = data?.document;
+  const uploader = doc?.uploader as User | undefined;
+  const assignee = doc?.assignedTo as User | undefined;
+
+  // Determine if current user can sign
+  let canSign = false;
+  if (user && doc?.status === "UNSIGNED") {
+    if (user.role === "admin") {
+      canSign = true;
+    } else if (user.role === "staff_akademik") {
+      const assigneeId = typeof doc.assignedTo === "object" ? doc.assignedTo?._id : doc.assignedTo;
+      if (assigneeId) {
+        canSign = assigneeId === user._id;
+      } else {
+        const uploaderId = typeof doc.uploader === "object" ? doc.uploader?._id : doc.uploader;
+        canSign = uploaderId === user._id;
+      }
+    }
+  }
+
+  // Determine if current user can assign
+  const canAssign =
+    user &&
+    doc?.status === "UNSIGNED" &&
+    (user.role === "admin" ||
+      user.role === "staff_administrasi" ||
+      (uploader && uploader._id === user._id));
+
+  async function handleAssignSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingAssign(true);
+    try {
+      const assignedTo = selectedAssignee === "unassigned" ? null : selectedAssignee;
+      await api.put(`/documents/${id}/assign`, { assignedTo });
+      toast.success("Penugasan dokumen berhasil diperbarui");
+      setAssignOpen(false);
+      await load();
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Gagal memperbarui penugasan"));
+    } finally {
+      setSavingAssign(false);
+    }
+  }
 
   async function handleSign() {
     if (!data) return;
@@ -157,7 +230,6 @@ export function DocumentDetailPage() {
   }, [previewUrl]);
 
   function downloadFile() {
-    // include token via fetch to honor auth, then trigger download
     fetch(`${fileUrl}?download=1`, { headers: { Authorization: `Bearer ${getToken()}` } })
       .then((r) => r.blob())
       .then((blob) => {
@@ -179,8 +251,7 @@ export function DocumentDetailPage() {
       </div>
     );
   }
-  if (!data) return null;
-  const doc = data.document;
+  if (!data || !doc) return null;
 
   return (
     <div className="space-y-6">
@@ -201,19 +272,31 @@ export function DocumentDetailPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={openPreview}>
-            <Eye /> Preview
+            <Eye className="mr-1.5 h-4 w-4" /> Preview
           </Button>
           <Button variant="outline" onClick={downloadFile}>
-            <Download /> Download
+            <Download className="mr-1.5 h-4 w-4" /> Download
           </Button>
-          {canSign && doc.status === "UNSIGNED" && (
-            <Button onClick={handleSign} disabled={signing}>
-              {signing ? <Loader2 className="animate-spin" /> : <PenLine />} Tandatangani
+
+          {canAssign && (
+            <Button variant="outline" onClick={() => setAssignOpen(true)}>
+              <UserPlus className="mr-1.5 h-4 w-4 text-primary" />
+              {assignee ? "Ubah Penugasan" : "Tugaskan Akademisi"}
             </Button>
           )}
-          <Button variant="destructive" onClick={handleDelete}>
-            <Trash2 /> Hapus
-          </Button>
+
+          {canSign && (
+            <Button onClick={handleSign} disabled={signing}>
+              {signing ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <PenLine className="mr-1.5 h-4 w-4" />}
+              Tandatangani Dokumen
+            </Button>
+          )}
+
+          {(user?.role === "admin" || (uploader && uploader._id === user?._id)) && (
+            <Button variant="destructive" onClick={handleDelete}>
+              <Trash2 className="mr-1.5 h-4 w-4" /> Hapus
+            </Button>
+          )}
         </div>
       </div>
 
@@ -231,6 +314,16 @@ export function DocumentDetailPage() {
               {doc.description && <InfoRow label="Deskripsi">{doc.description}</InfoRow>}
               <InfoRow label="Diunggah oleh">
                 {uploader?.nama} · {roleLabel[uploader?.role || ""]}
+              </InfoRow>
+              <InfoRow label="Ditugaskan kepada">
+                {assignee ? (
+                  <span className="flex items-center gap-1.5 font-semibold text-primary">
+                    <UserCheck className="h-4 w-4" />
+                    {assignee.nama} ({roleLabel[assignee.role] || "Akademisi"})
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground italic">Belum Ditugaskan</span>
+                )}
               </InfoRow>
               <InfoRow label="Hash SHA-256">
                 <span className="font-mono text-xs">{doc.hashDokumen.slice(0, 28)}…</span>
@@ -332,6 +425,48 @@ export function DocumentDetailPage() {
           </Card>
         </div>
       </div>
+
+      {/* Assignment Dialog */}
+      <Dialog open={assignOpen} onOpenChange={setAssignOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Tugaskan Penandatangan (Akademisi)</DialogTitle>
+            <DialogDescription>
+              Pilih Akademisi / Dosen yang berwenang memeriksa dan menandatangani dokumen ini.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleAssignSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <label htmlFor="assignee-select" className="text-sm font-medium">Akademisi Penandatangan</label>
+              <Select
+                value={selectedAssignee}
+                onValueChange={(val) => setSelectedAssignee(val)}
+              >
+                <SelectTrigger id="assignee-select">
+                  <SelectValue placeholder="Pilih Akademisi..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="unassigned">-- Batalkan Penugasan / Belum Ditugaskan --</SelectItem>
+                  {akademisiList.map((ak) => (
+                    <SelectItem key={ak._id} value={ak._id}>
+                      {ak.nama} ({ak.email})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setAssignOpen(false)}>
+                Batal
+              </Button>
+              <Button type="submit" disabled={savingAssign}>
+                {savingAssign ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
+                Simpan Penugasan
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* Signing progress dialog */}
       <Dialog open={signOpen} onOpenChange={(o) => !signing && setSignOpen(o)}>

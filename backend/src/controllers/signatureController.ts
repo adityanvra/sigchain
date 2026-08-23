@@ -18,6 +18,17 @@ export const prepareSign = asyncHandler(async (req: Request, res: Response) => {
   if (!doc) throw ApiError.notFound("Dokumen tidak ditemukan");
   if (doc.status === "SIGNED") throw ApiError.conflict("Dokumen sudah ditandatangani");
 
+  const isAdmin = req.user!.role === "admin";
+  const isAssigned = doc.assignedTo ? String(doc.assignedTo) === req.user!.sub : false;
+  const isUploaderAkademik =
+    req.user!.role === "staff_akademik" && String(doc.uploader) === req.user!.sub && !doc.assignedTo;
+
+  if (!isAdmin && !isAssigned && !isUploaderAkademik) {
+    throw ApiError.forbidden(
+      "Hanya Akademisi yang ditugaskan atau Administrator yang dapat menandatangani dokumen ini"
+    );
+  }
+
   res.json({
     success: true,
     hash: doc.hashDokumen,
@@ -45,6 +56,17 @@ export const confirmSign = asyncHandler(async (req: Request, res: Response) => {
   const doc = await DocumentModel.findById(req.params.id);
   if (!doc) throw ApiError.notFound("Dokumen tidak ditemukan");
   if (doc.status === "SIGNED") throw ApiError.conflict("Dokumen sudah ditandatangani");
+
+  const isAdmin = req.user!.role === "admin";
+  const isAssigned = doc.assignedTo ? String(doc.assignedTo) === req.user!.sub : false;
+  const isUploaderAkademik =
+    req.user!.role === "staff_akademik" && String(doc.uploader) === req.user!.sub && !doc.assignedTo;
+
+  if (!isAdmin && !isAssigned && !isUploaderAkademik) {
+    throw ApiError.forbidden(
+      "Hanya Akademisi yang ditugaskan atau Administrator yang dapat menandatangani dokumen ini"
+    );
+  }
 
   let result;
   if (blockchain.isMock()) {

@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { FileText, Search, Upload, Eye } from "lucide-react";
+import { FileText, Search, Upload, Eye, UserCheck } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -16,11 +17,13 @@ import {
 import { StatusBadge } from "@/components/StatusBadge";
 import { api } from "@/lib/api";
 import { formatBytes, formatDate } from "@/lib/utils";
-import type { DocumentItem } from "@/types";
+import { useAuth } from "@/context/AuthContext";
+import type { DocumentItem, User } from "@/types";
 
-type Filter = "ALL" | "SIGNED" | "UNSIGNED";
+type Filter = "ALL" | "SIGNED" | "UNSIGNED" | "ASSIGNED_ME";
 
 export function DocumentsPage() {
+  const { user } = useAuth();
   const [docs, setDocs] = useState<DocumentItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>("ALL");
@@ -30,10 +33,20 @@ export function DocumentsPage() {
     setLoading(true);
     try {
       const params: Record<string, string> = {};
-      if (filter !== "ALL") params.status = filter;
+      if (filter === "SIGNED" || filter === "UNSIGNED") {
+        params.status = filter;
+      }
       if (q) params.q = q;
       const { data } = await api.get("/documents", { params });
-      setDocs(data.documents);
+      
+      let list: DocumentItem[] = data.documents;
+      if (filter === "ASSIGNED_ME" && user) {
+        list = list.filter((d) => {
+          const assigneeId = typeof d.assignedTo === "object" ? d.assignedTo?._id : d.assignedTo;
+          return assigneeId === user._id;
+        });
+      }
+      setDocs(list);
     } finally {
       setLoading(false);
     }
@@ -45,6 +58,8 @@ export function DocumentsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter, q]);
 
+  const isAkademisi = user?.role === "staff_akademik";
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -54,7 +69,7 @@ export function DocumentsPage() {
         </div>
         <Button asChild>
           <Link to="/upload">
-            <Upload /> Upload Dokumen
+            <Upload className="mr-1.5 h-4 w-4" /> Upload Dokumen
           </Link>
         </Button>
       </div>
@@ -71,18 +86,46 @@ export function DocumentsPage() {
                 className="pl-9"
               />
             </div>
-            <div className="flex gap-1 rounded-lg bg-muted p-1">
-              {(["ALL", "UNSIGNED", "SIGNED"] as Filter[]).map((f) => (
+            <div className="flex flex-wrap gap-1 rounded-lg bg-muted p-1">
+              <button
+                type="button"
+                onClick={() => setFilter("ALL")}
+                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  filter === "ALL" ? "bg-background shadow-sm" : "text-muted-foreground"
+                }`}
+              >
+                Semua
+              </button>
+              {isAkademisi && (
                 <button
-                  key={f}
-                  onClick={() => setFilter(f)}
-                  className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                    filter === f ? "bg-background shadow-sm" : "text-muted-foreground"
+                  type="button"
+                  onClick={() => setFilter("ASSIGNED_ME")}
+                  className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                    filter === "ASSIGNED_ME" ? "bg-background shadow-sm text-primary" : "text-muted-foreground"
                   }`}
                 >
-                  {f === "ALL" ? "Semua" : f === "SIGNED" ? "Ditandatangani" : "Belum"}
+                  <UserCheck className="h-3.5 w-3.5" />
+                  Ditugaskan ke Saya
                 </button>
-              ))}
+              )}
+              <button
+                type="button"
+                onClick={() => setFilter("UNSIGNED")}
+                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  filter === "UNSIGNED" ? "bg-background shadow-sm" : "text-muted-foreground"
+                }`}
+              >
+                Belum Ditandatangani
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilter("SIGNED")}
+                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  filter === "SIGNED" ? "bg-background shadow-sm" : "text-muted-foreground"
+                }`}
+              >
+                Ditandatangani
+              </button>
             </div>
           </div>
         </CardContent>
@@ -109,6 +152,7 @@ export function DocumentsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Dokumen</TableHead>
+                  <TableHead>Ditugaskan Kepada</TableHead>
                   <TableHead className="hidden md:table-cell">Ukuran</TableHead>
                   <TableHead className="hidden lg:table-cell">Tanggal</TableHead>
                   <TableHead>Status</TableHead>
@@ -116,39 +160,66 @@ export function DocumentsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {docs.map((d) => (
-                  <TableRow key={d._id}>
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                          <FileText className="h-4 w-4" />
+                {docs.map((d) => {
+                  const assignee = d.assignedTo as User | undefined;
+                  const isAssignedToMe =
+                    user && assignee && assignee._id === user._id;
+
+                  return (
+                    <TableRow key={d._id}>
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                            <FileText className="h-4 w-4" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="truncate font-medium">{d.namaDokumen}</p>
+                            <p className="truncate font-mono text-xs text-muted-foreground">
+                              {d.hashDokumen.slice(0, 24)}…
+                            </p>
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <p className="truncate font-medium">{d.namaDokumen}</p>
-                          <p className="truncate font-mono text-xs text-muted-foreground">
-                            {d.hashDokumen.slice(0, 24)}…
-                          </p>
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell className="hidden text-sm text-muted-foreground md:table-cell">
-                      {formatBytes(d.fileSize)}
-                    </TableCell>
-                    <TableCell className="hidden text-sm text-muted-foreground lg:table-cell">
-                      {formatDate(d.createdAt)}
-                    </TableCell>
-                    <TableCell>
-                      <StatusBadge status={d.status} />
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button asChild variant="ghost" size="sm">
-                        <Link to={`/documents/${d._id}`}>
-                          <Eye /> Detail
-                        </Link>
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                      </TableCell>
+                      <TableCell>
+                        {assignee ? (
+                          <div className="flex items-center gap-1.5">
+                            <UserCheck className="h-3.5 w-3.5 text-primary shrink-0" />
+                            <div className="min-w-0">
+                              <p className="truncate text-xs font-medium text-foreground">
+                                {assignee.nama}
+                              </p>
+                              {isAssignedToMe && (
+                                <Badge variant="outline" className="text-[10px] px-1 py-0 border-primary/40 text-primary bg-primary/5">
+                                  Anda
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground italic">
+                            Belum Ditugaskan
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="hidden text-sm text-muted-foreground md:table-cell">
+                        {formatBytes(d.fileSize)}
+                      </TableCell>
+                      <TableCell className="hidden text-sm text-muted-foreground lg:table-cell">
+                        {formatDate(d.createdAt)}
+                      </TableCell>
+                      <TableCell>
+                        <StatusBadge status={d.status} />
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button asChild variant="ghost" size="sm">
+                          <Link to={`/documents/${d._id}`}>
+                            <Eye className="mr-1 h-3.5 w-3.5" /> Detail
+                          </Link>
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}

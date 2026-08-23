@@ -1,6 +1,8 @@
 import { Router } from "express";
 import {
   uploadDocument,
+  bulkUploadDocuments,
+  assignDocument,
   listDocuments,
   getDocument,
   downloadDocument,
@@ -15,13 +17,29 @@ const router = Router();
 
 router.use(authenticate);
 
-// Upload allowed for staff_akademik & staff_administrasi (and admin).
+// Single upload
 router.post(
   "/",
   authorize("admin", "staff_akademik", "staff_administrasi"),
   uploadPdfMemory.single("file"),
   uploadDocument
 );
+
+// Bulk upload
+router.post(
+  "/bulk",
+  authorize("admin", "staff_akademik", "staff_administrasi"),
+  uploadPdfMemory.array("files", 20),
+  bulkUploadDocuments
+);
+
+// Assign document to an Academician (Admin & Staff Administrasi)
+router.put(
+  "/:id/assign",
+  authorize("admin", "staff_administrasi"),
+  assignDocument
+);
+
 router.get("/", listDocuments);
 router.get("/:id", getDocument);
 router.get("/:id/file", downloadDocument);

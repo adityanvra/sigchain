@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   listUsers,
+  listAkademisi,
   createUser,
   updateUser,
   deleteUser,
@@ -12,6 +13,10 @@ import { validateBody } from "../middleware/validate";
 
 const router = Router();
 
+// Accessible to any authenticated user for assigning documents
+router.get("/akademisi", authenticate, listAkademisi);
+
+// Admin-only management endpoints
 router.use(authenticate, authorize("admin"));
 
 router.get("/", listUsers);

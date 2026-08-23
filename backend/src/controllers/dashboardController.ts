@@ -4,7 +4,14 @@ import { AuditTrail } from "../models/AuditTrail";
 import { asyncHandler } from "../utils/asyncHandler";
 
 export const dashboardStats = asyncHandler(async (req: Request, res: Response) => {
-  const scope = (req.user!.role === "admin" || req.user!.role === "staff_akademik") ? {} : { uploader: req.user!.sub };
+  let scope: Record<string, unknown> = {};
+  if (req.user!.role === "staff_akademik") {
+    scope = {
+      $or: [{ uploader: req.user!.sub }, { assignedTo: req.user!.sub }],
+    };
+  } else if (req.user!.role === "staff_administrasi") {
+    scope = { uploader: req.user!.sub };
+  }
 
   const [total, signed, unsigned, recentDocs] = await Promise.all([
     DocumentModel.countDocuments(scope),
@@ -12,6 +19,7 @@ export const dashboardStats = asyncHandler(async (req: Request, res: Response) =
     DocumentModel.countDocuments({ ...scope, status: "UNSIGNED" }),
     DocumentModel.find(scope)
       .populate("uploader", "nama email")
+      .populate("assignedTo", "nama email")
       .sort({ createdAt: -1 })
       .limit(5),
   ]);

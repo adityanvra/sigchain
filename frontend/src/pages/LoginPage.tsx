@@ -137,7 +137,7 @@ export function LoginPage() {
                 Admin
               </Button>
               <Button variant="outline" size="sm" onClick={() => fill("akademik")}>
-                Akademik
+                Akademisi
               </Button>
               <Button variant="outline" size="sm" onClick={() => fill("administrasi")}>
                 Administrasi

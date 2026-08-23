@@ -4,6 +4,8 @@ export type AuditAction =
   | "LOGIN"
   | "LOGOUT"
   | "UPLOAD"
+  | "BULK_UPLOAD"
+  | "ASSIGN"
   | "DELETE"
   | "SIGN"
   | "VERIFY"
@@ -31,6 +33,8 @@ const auditTrailSchema = new Schema<IAuditTrail>(
         "LOGIN",
         "LOGOUT",
         "UPLOAD",
+        "BULK_UPLOAD",
+        "ASSIGN",
         "DELETE",
         "SIGN",
         "VERIFY",

@@ -235,7 +235,7 @@ export function UsersPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="admin">Admin</SelectItem>
-                  <SelectItem value="staff_akademik">Staff Akademik</SelectItem>
+                  <SelectItem value="staff_akademik">Akademisi (Dosen)</SelectItem>
                   <SelectItem value="staff_administrasi">Staff Administrasi</SelectItem>
                 </SelectContent>
               </Select>
