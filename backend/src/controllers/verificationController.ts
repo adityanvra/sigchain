@@ -12,7 +12,7 @@ async function buildResult(hash: string) {
   const doc = await DocumentModel.findOne({ hashDokumen: hash }).populate(
     "uploader",
     "nama email role"
-  );
+  ).populate("assignedTo", "nama email role");
   const signatures = doc
     ? await Signature.find({ documentId: doc._id }).populate("signer", "nama email")
     : [];
@@ -39,7 +39,10 @@ async function buildResult(hash: string) {
           transactionHash: doc.transactionHash,
           blockNumber: doc.blockNumber,
           blockchainTimestamp: doc.blockchainTimestamp,
+          walletAddress: doc.walletAddress,
           uploader: doc.uploader,
+          assignedTo: doc.assignedTo,
+          signaturePosition: doc.signaturePosition,
           createdAt: doc.createdAt,
         }
       : null,
@@ -48,12 +51,37 @@ async function buildResult(hash: string) {
   };
 }
 
-/** Public verification by hash (used by QR codes — no auth required). */
+/** Public verification by SHA-256 hash (used by QR codes — no auth required). */
 export const verifyByHash = asyncHandler(async (req: Request, res: Response) => {
   const hash = String(req.params.hash || "").toLowerCase();
   if (!/^[a-f0-9]{64}$/.test(hash)) throw ApiError.badRequest("Format hash tidak valid (SHA-256)");
 
   const result = await buildResult(hash);
+  res.json({ success: true, ...result });
+});
+
+/** Public verification by document ID (used by QR codes pointing to /verify/:id). */
+export const verifyByDocumentId = asyncHandler(async (req: Request, res: Response) => {
+  const doc = await DocumentModel.findById(req.params.id);
+  if (!doc) throw ApiError.notFound("Dokumen tidak ditemukan");
+  if (!doc.hashDokumen) {
+    return res.json({
+      success: true,
+      valid: false,
+      status: "TIDAK VALID",
+      hash: null,
+      document: {
+        id: doc._id,
+        namaDokumen: doc.namaDokumen,
+        status: doc.status,
+      },
+      onChain: { exists: false, signer: null, blockNumber: null, timestamp: null, explorer: null },
+      signatures: [],
+      mock: blockchain.config().mock,
+    });
+  }
+
+  const result = await buildResult(doc.hashDokumen);
   res.json({ success: true, ...result });
 });
 

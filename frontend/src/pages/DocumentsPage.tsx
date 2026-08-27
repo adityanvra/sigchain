@@ -18,9 +18,9 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { api } from "@/lib/api";
 import { formatBytes, formatDate } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
-import type { DocumentItem, User } from "@/types";
+import type { DocumentItem, DocStatus, User } from "@/types";
 
-type Filter = "ALL" | "SIGNED" | "UNSIGNED" | "ASSIGNED_ME";
+type Filter = "ALL" | "SIGNED" | "PENDING_BLOCKCHAIN" | "DRAFT" | "ASSIGNED_ME";
 
 export function DocumentsPage() {
   const { user } = useAuth();
@@ -33,12 +33,17 @@ export function DocumentsPage() {
     setLoading(true);
     try {
       const params: Record<string, string> = {};
-      if (filter === "SIGNED" || filter === "UNSIGNED") {
-        params.status = filter;
+      const statusMap: Partial<Record<Filter, DocStatus>> = {
+        SIGNED: "SIGNED",
+        PENDING_BLOCKCHAIN: "PENDING_BLOCKCHAIN",
+        DRAFT: "DRAFT",
+      };
+      if (filter in statusMap) {
+        params.status = statusMap[filter as keyof typeof statusMap]!;
       }
       if (q) params.q = q;
       const { data } = await api.get("/documents", { params });
-      
+
       let list: DocumentItem[] = data.documents;
       if (filter === "ASSIGNED_ME" && user) {
         list = list.filter((d) => {
@@ -60,12 +65,19 @@ export function DocumentsPage() {
 
   const isAkademisi = user?.role === "staff_akademik";
 
+  const filterButtons: { key: Filter; label: string }[] = [
+    { key: "ALL", label: "Semua" },
+    { key: "DRAFT", label: "Draft" },
+    { key: "PENDING_BLOCKCHAIN", label: "Menunggu Blockchain" },
+    { key: "SIGNED", label: "Ditandatangani" },
+  ];
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Manajemen Dokumen</h1>
-          <p className="text-sm text-muted-foreground">Kelola, tinjau, dan tandatangani dokumen.</p>
+          <p className="text-sm text-muted-foreground">Kelola, tinjau, dan tandatangani dokumen akademik.</p>
         </div>
         <Button asChild>
           <Link to="/upload">
@@ -87,45 +99,32 @@ export function DocumentsPage() {
               />
             </div>
             <div className="flex flex-wrap gap-1 rounded-lg bg-muted p-1">
-              <button
-                type="button"
-                onClick={() => setFilter("ALL")}
-                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                  filter === "ALL" ? "bg-background shadow-sm" : "text-muted-foreground"
-                }`}
-              >
-                Semua
-              </button>
+              {filterButtons.map(({ key, label }) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setFilter(key)}
+                  className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                    filter === key ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
               {isAkademisi && (
                 <button
                   type="button"
                   onClick={() => setFilter("ASSIGNED_ME")}
                   className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                    filter === "ASSIGNED_ME" ? "bg-background shadow-sm text-primary" : "text-muted-foreground"
+                    filter === "ASSIGNED_ME"
+                      ? "bg-background shadow-sm text-primary"
+                      : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
                   <UserCheck className="h-3.5 w-3.5" />
                   Ditugaskan ke Saya
                 </button>
               )}
-              <button
-                type="button"
-                onClick={() => setFilter("UNSIGNED")}
-                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                  filter === "UNSIGNED" ? "bg-background shadow-sm" : "text-muted-foreground"
-                }`}
-              >
-                Belum Ditandatangani
-              </button>
-              <button
-                type="button"
-                onClick={() => setFilter("SIGNED")}
-                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                  filter === "SIGNED" ? "bg-background shadow-sm" : "text-muted-foreground"
-                }`}
-              >
-                Ditandatangani
-              </button>
             </div>
           </div>
         </CardContent>
@@ -143,9 +142,7 @@ export function DocumentsPage() {
             <div className="flex flex-col items-center gap-2 py-16 text-center">
               <FileText className="h-10 w-10 text-muted-foreground" />
               <p className="font-medium">Tidak ada dokumen</p>
-              <p className="text-sm text-muted-foreground">
-                Coba ubah filter atau unggah dokumen baru.
-              </p>
+              <p className="text-sm text-muted-foreground">Coba ubah filter atau unggah dokumen baru.</p>
             </div>
           ) : (
             <Table>
@@ -162,8 +159,7 @@ export function DocumentsPage() {
               <TableBody>
                 {docs.map((d) => {
                   const assignee = d.assignedTo as User | undefined;
-                  const isAssignedToMe =
-                    user && assignee && assignee._id === user._id;
+                  const isAssignedToMe = user && assignee && assignee._id === user._id;
 
                   return (
                     <TableRow key={d._id}>
@@ -175,7 +171,7 @@ export function DocumentsPage() {
                           <div className="min-w-0">
                             <p className="truncate font-medium">{d.namaDokumen}</p>
                             <p className="truncate font-mono text-xs text-muted-foreground">
-                              {d.hashDokumen.slice(0, 24)}…
+                              {d.hashDokumen ? `${d.hashDokumen.slice(0, 20)}…` : <span className="italic">Belum ada hash</span>}
                             </p>
                           </div>
                         </div>
@@ -185,9 +181,7 @@ export function DocumentsPage() {
                           <div className="flex items-center gap-1.5">
                             <UserCheck className="h-3.5 w-3.5 text-primary shrink-0" />
                             <div className="min-w-0">
-                              <p className="truncate text-xs font-medium text-foreground">
-                                {assignee.nama}
-                              </p>
+                              <p className="truncate text-xs font-medium text-foreground">{assignee.nama}</p>
                               {isAssignedToMe && (
                                 <Badge variant="outline" className="text-[10px] px-1 py-0 border-primary/40 text-primary bg-primary/5">
                                   Anda
@@ -196,9 +190,7 @@ export function DocumentsPage() {
                             </div>
                           </div>
                         ) : (
-                          <span className="text-xs text-muted-foreground italic">
-                            Belum Ditugaskan
-                          </span>
+                          <span className="text-xs text-muted-foreground italic">Belum Ditugaskan</span>
                         )}
                       </TableCell>
                       <TableCell className="hidden text-sm text-muted-foreground md:table-cell">

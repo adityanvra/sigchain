@@ -15,6 +15,9 @@ import {
   Eye,
   UserCheck,
   UserPlus,
+  Edit3,
+  CheckCircle2,
+  Clock,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -35,6 +38,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "@/components/StatusBadge";
 import { CopyButton } from "@/components/CopyButton";
 import { api, apiErrorMessage, getToken } from "@/lib/api";
@@ -48,7 +52,7 @@ import { toast } from "sonner";
 interface DetailResponse {
   document: DocumentItem;
   signatures: SignatureItem[];
-  qrCode: string;
+  qrCode: string | null;
   verifyUrl: string;
   explorer: string | null;
 }
@@ -67,7 +71,7 @@ export function DocumentDetailPage() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
-  // Assign dialog state
+  // Assign dialog
   const [assignOpen, setAssignOpen] = useState(false);
   const [akademisiList, setAkademisiList] = useState<User[]>([]);
   const [selectedAssignee, setSelectedAssignee] = useState<string>("unassigned");
@@ -88,19 +92,14 @@ export function DocumentDetailPage() {
     }
   }, [id, navigate]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useEffect(() => { load(); }, [load]);
 
-  // Load Akademisi list for assignment dialog
   useEffect(() => {
     async function fetchAkademisi() {
       try {
         const { data } = await api.get("/users/akademisi");
         setAkademisiList(data.akademisi || []);
-      } catch (err) {
-        console.error("Gagal memuat daftar akademisi:", err);
-      }
+      } catch { /* silent */ }
     }
     fetchAkademisi();
   }, []);
@@ -110,9 +109,9 @@ export function DocumentDetailPage() {
   const uploader = doc?.uploader as User | undefined;
   const assignee = doc?.assignedTo as User | undefined;
 
-  // Determine if current user can sign
+  // Can this user open the signature editor?
   let canSign = false;
-  if (user && doc?.status === "UNSIGNED") {
+  if (user && doc && (doc.status === "DRAFT" || doc.status === "UNSIGNED" || doc.status === "PENDING_BLOCKCHAIN")) {
     if (user.role === "admin") {
       canSign = true;
     } else if (user.role === "staff_akademik") {
@@ -126,10 +125,11 @@ export function DocumentDetailPage() {
     }
   }
 
-  // Determine if current user can assign
+  const isPendingBlockchain = doc?.status === "PENDING_BLOCKCHAIN";
+
   const canAssign =
     user &&
-    doc?.status === "UNSIGNED" &&
+    doc?.status !== "SIGNED" &&
     (user.role === "admin" ||
       user.role === "staff_administrasi" ||
       (uploader && uploader._id === user._id));
@@ -150,6 +150,7 @@ export function DocumentDetailPage() {
     }
   }
 
+  // Direct blockchain confirmation (for PENDING_BLOCKCHAIN docs)
   async function handleSign() {
     if (!data) return;
     setSigning(true);
@@ -175,22 +176,21 @@ export function DocumentDetailPage() {
         walletAddress = signed.address;
         signature = signed.signature;
       } else if (!mock) {
-        throw new Error("MetaMask tidak terdeteksi. Pasang MetaMask untuk menandatangani di blockchain.");
+        throw new Error("MetaMask tidak terdeteksi.");
       } else {
-        setSignStep("Mode demo tanpa MetaMask — menggunakan wallet simulasi…");
+        setSignStep("Mode demo — menggunakan wallet simulasi…");
       }
 
       const payload: Record<string, unknown> = { walletAddress, signature };
-
       if (!mock) {
         setSignStep("Mengirim transaksi ke blockchain (konfirmasi di MetaMask)…");
         const txHash = await storeHashOnChain(hash, walletAddress);
         payload.transactionHash = txHash;
       }
 
-      setSignStep("Mencatat tanda tangan & menunggu konfirmasi…");
+      setSignStep("Mencatat ke blockchain…");
       await api.post(`/documents/${id}/sign/confirm`, payload);
-      toast.success("Dokumen berhasil ditandatangani & dicatat di blockchain");
+      toast.success("Dokumen berhasil ditandatangani & dicatat di blockchain!");
       setSignOpen(false);
       await load();
     } catch (err) {
@@ -217,7 +217,11 @@ export function DocumentDetailPage() {
     setPreviewOpen(true);
     if (previewUrl) return;
     try {
-      const r = await fetch(fileUrl, { headers: { Authorization: `Bearer ${getToken()}` } });
+      // Serve signed PDF if available, otherwise draft
+      const url = doc?.status === "SIGNED" || doc?.status === "PENDING_BLOCKCHAIN"
+        ? fileUrl
+        : `${fileUrl}?type=draft`;
+      const r = await fetch(url, { headers: { Authorization: `Bearer ${getToken()}` } });
       const blob = await r.blob();
       setPreviewUrl(URL.createObjectURL(blob));
     } catch {
@@ -225,20 +229,20 @@ export function DocumentDetailPage() {
     }
   }
 
-  useEffect(() => () => {
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-  }, [previewUrl]);
+  useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
 
-  function downloadFile() {
-    fetch(`${fileUrl}?download=1`, { headers: { Authorization: `Bearer ${getToken()}` } })
+  function downloadFile(type: "draft" | "signed" = "signed") {
+    const url = type === "draft" ? `${fileUrl}?type=draft&download=1` : `${fileUrl}?download=1`;
+    fetch(url, { headers: { Authorization: `Bearer ${getToken()}` } })
       .then((r) => r.blob())
       .then((blob) => {
-        const url = URL.createObjectURL(blob);
+        const objUrl = URL.createObjectURL(blob);
         const a = document.createElement("a");
-        a.href = url;
-        a.download = data?.document.fileName || "dokumen.pdf";
+        a.href = objUrl;
+        const base = doc?.fileName?.replace(/\.pdf$/i, "") || "dokumen";
+        a.download = type === "draft" ? `${base}_DRAFT.pdf` : `${base}_SIGNED.pdf`;
         a.click();
-        URL.revokeObjectURL(url);
+        URL.revokeObjectURL(objUrl);
       })
       .catch(() => toast.error("Gagal mengunduh berkas"));
   }
@@ -255,12 +259,11 @@ export function DocumentDetailPage() {
 
   return (
     <div className="space-y-6">
+      {/* Top bar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" asChild>
-            <Link to="/documents">
-              <ArrowLeft />
-            </Link>
+            <Link to="/documents"><ArrowLeft /></Link>
           </Button>
           <div>
             <h1 className="text-xl font-bold tracking-tight">{doc.namaDokumen}</h1>
@@ -270,14 +273,18 @@ export function DocumentDetailPage() {
             </div>
           </div>
         </div>
+
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={openPreview}>
             <Eye className="mr-1.5 h-4 w-4" /> Preview
           </Button>
-          <Button variant="outline" onClick={downloadFile}>
-            <Download className="mr-1.5 h-4 w-4" /> Download
+
+          {/* Download buttons */}
+          <Button variant="outline" onClick={() => downloadFile(doc.status === "SIGNED" || doc.status === "PENDING_BLOCKCHAIN" ? "signed" : "draft")}>
+            <Download className="mr-1.5 h-4 w-4" /> Unduh
           </Button>
 
+          {/* Assign button */}
           {canAssign && (
             <Button variant="outline" onClick={() => setAssignOpen(true)}>
               <UserPlus className="mr-1.5 h-4 w-4 text-primary" />
@@ -285,13 +292,25 @@ export function DocumentDetailPage() {
             </Button>
           )}
 
-          {canSign && (
-            <Button onClick={handleSign} disabled={signing}>
-              {signing ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <PenLine className="mr-1.5 h-4 w-4" />}
-              Tandatangani Dokumen
+          {/* Open editor — for DRAFT / UNSIGNED docs */}
+          {canSign && !isPendingBlockchain && (
+            <Button asChild>
+              <Link to={`/documents/${id}/sign-editor`}>
+                <Edit3 className="mr-1.5 h-4 w-4" />
+                Buka Editor Tanda Tangan
+              </Link>
             </Button>
           )}
 
+          {/* Direct blockchain confirm — for PENDING_BLOCKCHAIN */}
+          {canSign && isPendingBlockchain && (
+            <Button onClick={handleSign} disabled={signing}>
+              {signing ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Wallet className="mr-1.5 h-4 w-4" />}
+              Catat ke Blockchain
+            </Button>
+          )}
+
+          {/* Delete */}
           {(user?.role === "admin" || (uploader && uploader._id === user?._id)) && (
             <Button variant="destructive" onClick={handleDelete}>
               <Trash2 className="mr-1.5 h-4 w-4" /> Hapus
@@ -300,112 +319,165 @@ export function DocumentDetailPage() {
         </div>
       </div>
 
+      {/* Status banner for PENDING_BLOCKCHAIN */}
+      {isPendingBlockchain && (
+        <div className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-50 dark:bg-amber-950/20 p-4">
+          <Clock className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
+          <div>
+            <p className="text-sm font-semibold text-amber-800 dark:text-amber-400">
+              Tanda tangan visual sudah diterapkan — menunggu pencatatan blockchain
+            </p>
+            <p className="text-xs text-amber-700 dark:text-amber-500 mt-0.5">
+              PDF final dan SHA-256 sudah siap. Klik tombol "Catat ke Blockchain" untuk menyelesaikan proses penandatanganan.
+            </p>
+            <p className="text-[11px] font-mono text-amber-600 dark:text-amber-500 mt-1 break-all">
+              SHA-256: {doc.hashDokumen}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Main content with tabs */}
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <FileText className="h-4 w-4 text-primary" /> Informasi Dokumen
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-1 text-sm">
-              <InfoRow label="Nama Berkas">{doc.fileName}</InfoRow>
-              <InfoRow label="Ukuran">{formatBytes(doc.fileSize)}</InfoRow>
-              {doc.description && <InfoRow label="Deskripsi">{doc.description}</InfoRow>}
-              <InfoRow label="Diunggah oleh">
-                {uploader?.nama} · {roleLabel[uploader?.role || ""]}
-              </InfoRow>
-              <InfoRow label="Ditugaskan kepada">
-                {assignee ? (
-                  <span className="flex items-center gap-1.5 font-semibold text-primary">
-                    <UserCheck className="h-4 w-4" />
-                    {assignee.nama} ({roleLabel[assignee.role] || "Akademisi"})
-                  </span>
-                ) : (
-                  <span className="text-muted-foreground italic">Belum Ditugaskan</span>
-                )}
-              </InfoRow>
-              <InfoRow label="Hash SHA-256">
-                <span className="font-mono text-xs">{doc.hashDokumen.slice(0, 28)}…</span>
-                <CopyButton value={doc.hashDokumen} />
-              </InfoRow>
-            </CardContent>
-          </Card>
+          <Tabs defaultValue="info">
+            <TabsList>
+              <TabsTrigger value="info">
+                <FileText className="mr-1.5 h-3.5 w-3.5" /> Informasi
+              </TabsTrigger>
+              <TabsTrigger value="blockchain">
+                <ShieldCheck className="mr-1.5 h-3.5 w-3.5" /> Blockchain
+              </TabsTrigger>
+            </TabsList>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <ShieldCheck className="h-4 w-4 text-primary" /> Pencatatan Blockchain
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-1 text-sm">
-              {doc.status === "SIGNED" ? (
-                <>
-                  <InfoRow label="Transaction Hash">
-                    <span className="font-mono text-xs">{shortAddress(doc.transactionHash)}</span>
-                    {doc.transactionHash && <CopyButton value={doc.transactionHash} />}
+            {/* Tab: Informasi */}
+            <TabsContent value="info" className="mt-4">
+              <Card>
+                <CardContent className="space-y-1 pt-4 text-sm">
+                  <InfoRow label="Nama Berkas">{doc.fileName}</InfoRow>
+                  <InfoRow label="Ukuran">{formatBytes(doc.fileSize)}</InfoRow>
+                  {doc.description && <InfoRow label="Deskripsi">{doc.description}</InfoRow>}
+                  <InfoRow label="Status">
+                    <StatusBadge status={doc.status} />
                   </InfoRow>
-                  <InfoRow label="Block Number">#{doc.blockNumber}</InfoRow>
-                  <InfoRow label="Timestamp">{formatDate(doc.blockchainTimestamp)}</InfoRow>
-                  {data.explorer && (
-                    <InfoRow label="Etherscan">
-                      <a
-                        href={data.explorer}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-primary hover:underline"
-                      >
-                        Buka transaksi <ExternalLink className="h-3 w-3" />
-                      </a>
+                  <InfoRow label="Diunggah oleh">
+                    {uploader?.nama} · {roleLabel[uploader?.role || ""]}
+                  </InfoRow>
+                  <InfoRow label="Ditugaskan kepada">
+                    {assignee ? (
+                      <span className="flex items-center gap-1.5 font-semibold text-primary">
+                        <UserCheck className="h-4 w-4" />
+                        {assignee.nama} ({roleLabel[assignee.role] || "Akademisi"})
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground italic">Belum Ditugaskan</span>
+                    )}
+                  </InfoRow>
+                  {doc.walletAddress && (
+                    <InfoRow label="Wallet Penandatangan">
+                      <span className="font-mono text-xs">{shortAddress(doc.walletAddress)}</span>
+                      <CopyButton value={doc.walletAddress} />
                     </InfoRow>
                   )}
-                </>
-              ) : (
-                <p className="py-2 text-muted-foreground">
-                  Dokumen belum ditandatangani / dicatat ke blockchain.
-                </p>
-              )}
-            </CardContent>
-          </Card>
+                  {doc.signaturePosition && (
+                    <InfoRow label="Posisi Tanda Tangan">
+                      <span className="text-xs text-muted-foreground">
+                        Hal. {doc.signaturePosition.page + 1} · ({doc.signaturePosition.x}, {doc.signaturePosition.y}) · {doc.signaturePosition.width}×{doc.signaturePosition.height}
+                      </span>
+                    </InfoRow>
+                  )}
+                </CardContent>
+              </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <PenLine className="h-4 w-4 text-primary" /> Riwayat Tanda Tangan
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {data.signatures.length === 0 ? (
-                <p className="py-4 text-sm text-muted-foreground">Belum ada tanda tangan.</p>
-              ) : (
-                <div className="space-y-3">
-                  {data.signatures.map((s) => {
-                    const signer = s.signer as User;
-                    return (
-                      <div
-                        key={s._id}
-                        className="flex items-start gap-3 rounded-lg border p-3"
-                      >
-                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary">
-                          <Wallet className="h-4 w-4" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium">{signer?.nama || "Penandatangan"}</p>
-                          <p className="font-mono text-xs text-muted-foreground">
-                            {shortAddress(s.walletAddress)}
-                          </p>
-                          <p className="text-xs text-muted-foreground">{formatDate(s.timestamp)}</p>
-                        </div>
-                        <Badge variant="success">Terverifikasi</Badge>
+              {/* Signature history */}
+              <Card className="mt-4">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <PenLine className="h-4 w-4 text-primary" /> Riwayat Tanda Tangan
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {data.signatures.length === 0 ? (
+                    <p className="py-4 text-sm text-muted-foreground">Belum ada tanda tangan digital.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {data.signatures.map((s) => {
+                        const signer = s.signer as User;
+                        return (
+                          <div key={s._id} className="flex items-start gap-3 rounded-lg border p-3">
+                            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary">
+                              <Wallet className="h-4 w-4" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-medium">{signer?.nama || "Penandatangan"}</p>
+                              <p className="font-mono text-xs text-muted-foreground">{shortAddress(s.walletAddress)}</p>
+                              <p className="text-xs text-muted-foreground">{formatDate(s.timestamp)}</p>
+                            </div>
+                            <Badge variant="success">Terverifikasi</Badge>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Tab: Blockchain */}
+            <TabsContent value="blockchain" className="mt-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <ShieldCheck className="h-4 w-4 text-primary" /> Pencatatan Blockchain
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-1 text-sm">
+                  <InfoRow label="SHA-256 (PDF Final)">
+                    <span className="font-mono text-xs">
+                      {doc.hashDokumen ? `${doc.hashDokumen.slice(0, 20)}…` : <span className="text-muted-foreground italic">Belum dihitung</span>}
+                    </span>
+                    {doc.hashDokumen && <CopyButton value={doc.hashDokumen} />}
+                  </InfoRow>
+                  {doc.status === "SIGNED" ? (
+                    <>
+                      <InfoRow label="Transaction Hash">
+                        <span className="font-mono text-xs">{shortAddress(doc.transactionHash)}</span>
+                        {doc.transactionHash && <CopyButton value={doc.transactionHash} />}
+                      </InfoRow>
+                      <InfoRow label="Block Number">#{doc.blockNumber}</InfoRow>
+                      <InfoRow label="Timestamp">{formatDate(doc.blockchainTimestamp)}</InfoRow>
+                      <InfoRow label="Network">Ethereum Sepolia</InfoRow>
+                      {data.explorer && (
+                        <InfoRow label="Etherscan">
+                          <a
+                            href={data.explorer}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 text-primary hover:underline"
+                          >
+                            Buka transaksi <ExternalLink className="h-3 w-3" />
+                          </a>
+                        </InfoRow>
+                      )}
+                      <div className="mt-3 flex items-center gap-2 rounded-lg bg-green-50 dark:bg-green-950/20 px-3 py-2 text-xs text-green-700 dark:text-green-400">
+                        <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                        Hash PDF final berhasil tercatat di blockchain Ethereum Sepolia.
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                    </>
+                  ) : (
+                    <p className="py-2 text-muted-foreground text-sm">
+                      {doc.status === "PENDING_BLOCKCHAIN"
+                        ? "PDF final siap — menunggu konfirmasi MetaMask untuk mencatat hash ke blockchain."
+                        : "Dokumen belum ditandatangani — buka editor tanda tangan untuk memulai proses."}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
         </div>
 
+        {/* Right sidebar */}
         <div className="space-y-6">
           <Card>
             <CardHeader>
@@ -414,19 +486,56 @@ export function DocumentDetailPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col items-center gap-4">
-              <div className="rounded-xl border bg-white p-4">
-                <QRCodeCanvas value={data.verifyUrl} size={170} />
-              </div>
-              <p className="text-center text-xs text-muted-foreground">
-                Pindai untuk membuka halaman verifikasi publik dokumen ini.
-              </p>
-              <CopyButton value={data.verifyUrl} label="Salin tautan verifikasi" />
+              {doc.status === "SIGNED" && data.qrCode ? (
+                <>
+                  <div className="rounded-xl border bg-white p-4">
+                    <QRCodeCanvas value={data.verifyUrl} size={170} />
+                  </div>
+                  <p className="text-center text-xs text-muted-foreground">
+                    Scan untuk membuka halaman verifikasi publik.
+                  </p>
+                  <CopyButton value={data.verifyUrl} label="Salin tautan verifikasi" />
+                </>
+              ) : (
+                <div className="w-full rounded-xl border border-dashed p-6 text-center">
+                  <Hash className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                  <p className="text-xs text-muted-foreground">
+                    QR Code tersedia setelah dokumen ditandatangani dan dicatat di blockchain.
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Alur status */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Alur Penandatanganan</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ol className="space-y-2 text-xs">
+                {[
+                  { label: "Upload Draft", done: true },
+                  { label: "Editor Tanda Tangan", done: doc.status !== "DRAFT" && doc.status !== "UNSIGNED" },
+                  { label: "Konfirmasi MetaMask", done: doc.status === "SIGNED" },
+                  { label: "Tercatat di Blockchain", done: doc.status === "SIGNED" },
+                ].map((step, i) => (
+                  <li key={i} className={`flex items-center gap-2 ${step.done ? "text-foreground" : "text-muted-foreground"}`}>
+                    {step.done ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-green-500 shrink-0" />
+                    ) : (
+                      <div className="h-3.5 w-3.5 rounded-full border-2 border-muted-foreground shrink-0" />
+                    )}
+                    {step.label}
+                  </li>
+                ))}
+              </ol>
             </CardContent>
           </Card>
         </div>
       </div>
 
-      {/* Assignment Dialog */}
+      {/* Assign dialog */}
       <Dialog open={assignOpen} onOpenChange={setAssignOpen}>
         <DialogContent>
           <DialogHeader>
@@ -438,10 +547,7 @@ export function DocumentDetailPage() {
           <form onSubmit={handleAssignSubmit} className="space-y-4">
             <div className="space-y-2">
               <label htmlFor="assignee-select" className="text-sm font-medium">Akademisi Penandatangan</label>
-              <Select
-                value={selectedAssignee}
-                onValueChange={(val) => setSelectedAssignee(val)}
-              >
+              <Select value={selectedAssignee} onValueChange={(val) => setSelectedAssignee(val)}>
                 <SelectTrigger id="assignee-select">
                   <SelectValue placeholder="Pilih Akademisi..." />
                 </SelectTrigger>
@@ -456,9 +562,7 @@ export function DocumentDetailPage() {
               </Select>
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setAssignOpen(false)}>
-                Batal
-              </Button>
+              <Button type="button" variant="outline" onClick={() => setAssignOpen(false)}>Batal</Button>
               <Button type="submit" disabled={savingAssign}>
                 {savingAssign ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
                 Simpan Penugasan
@@ -468,11 +572,11 @@ export function DocumentDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Signing progress dialog */}
+      {/* Signing dialog */}
       <Dialog open={signOpen} onOpenChange={(o) => !signing && setSignOpen(o)}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Proses Tanda Tangan</DialogTitle>
+            <DialogTitle>Konfirmasi Blockchain</DialogTitle>
             <DialogDescription>Jangan tutup jendela ini.</DialogDescription>
           </DialogHeader>
           <div className="flex items-center gap-3 py-2">
@@ -504,7 +608,7 @@ export function DocumentDetailPage() {
 function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-3 border-b py-2 last:border-0">
-      <span className="text-muted-foreground">{label}</span>
+      <span className="text-muted-foreground shrink-0">{label}</span>
       <span className="flex items-center gap-1 text-right font-medium">{children}</span>
     </div>
   );

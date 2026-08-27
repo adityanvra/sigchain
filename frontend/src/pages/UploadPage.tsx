@@ -4,11 +4,11 @@ import {
   UploadCloud,
   FileText,
   Loader2,
-  Hash,
   X,
   UserCheck,
   Plus,
   Layers,
+  Sparkles,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -23,7 +23,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { api, apiErrorMessage } from "@/lib/api";
-import { sha256File } from "@/lib/crypto";
 import { formatBytes } from "@/lib/utils";
 import type { User } from "@/types";
 import { toast } from "sonner";
@@ -31,8 +30,6 @@ import { toast } from "sonner";
 interface FileEntry {
   id: string;
   file: File;
-  hash: string;
-  hashing: boolean;
   namaDokumen: string;
   description: string;
   assignedTo: string; // user id or "unassigned"
@@ -82,32 +79,12 @@ export function UploadPage() {
     const newEntries: FileEntry[] = validFiles.map((f, idx) => ({
       id: `${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 7)}`,
       file: f,
-      hash: "",
-      hashing: true,
       namaDokumen: f.name.replace(/\.pdf$/i, ""),
       description: "",
       assignedTo: globalAssignee !== "unassigned" ? globalAssignee : "unassigned",
     }));
 
     setFileEntries((prev) => [...prev, ...newEntries]);
-
-    // Calculate SHA-256 in background
-    for (const entry of newEntries) {
-      try {
-        const hash = await sha256File(entry.file);
-        setFileEntries((current) =>
-          current.map((item) =>
-            item.id === entry.id ? { ...item, hash, hashing: false } : item
-          )
-        );
-      } catch {
-        setFileEntries((current) =>
-          current.map((item) =>
-            item.id === entry.id ? { ...item, hashing: false } : item
-          )
-        );
-      }
-    }
   }
 
   function removeEntry(id: string) {
@@ -134,13 +111,7 @@ export function UploadPage() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (fileEntries.length === 0) {
-      toast.error("Pilih setidaknya satu file PDF");
-      return;
-    }
-
-    const stillHashing = fileEntries.some((f) => f.hashing);
-    if (stillHashing) {
-      toast.info("Sedang menghitung hash dokumen, mohon tunggu sebentar…");
+      toast.error("Pilih setidaknya satu berkas draft PDF");
       return;
     }
 
@@ -158,7 +129,7 @@ export function UploadPage() {
         }
 
         const { data } = await api.post("/documents", form);
-        toast.success("Dokumen berhasil diunggah");
+        toast.success("Draft dokumen berhasil diunggah");
         navigate(`/documents/${data.document._id}`);
       } else {
         // Bulk upload
@@ -177,7 +148,7 @@ export function UploadPage() {
         form.append("assignments", JSON.stringify(assignments));
 
         const { data } = await api.post("/documents/bulk", form);
-        toast.success(`${data.count || fileEntries.length} dokumen berhasil diunggah`);
+        toast.success(`${data.count || fileEntries.length} draft dokumen berhasil diunggah`);
         navigate("/documents");
       }
     } catch (err) {
@@ -191,9 +162,9 @@ export function UploadPage() {
     <div className="mx-auto max-w-4xl space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Upload Dokumen</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Upload Draft Dokumen</h1>
           <p className="text-sm text-muted-foreground">
-            Unggah satu atau banyak berkas PDF (Bulk Upload) dan tentukan Akademisi penandatangan.
+            Unggah satu atau banyak berkas draft PDF (Bulk Upload) dan tentukan Akademisi penandatangan.
           </p>
         </div>
         {fileEntries.length > 0 && (
@@ -229,7 +200,7 @@ export function UploadPage() {
                 <UploadCloud className="h-7 w-7" />
               </div>
               <div>
-                <p className="font-semibold">Klik atau seret berkas PDF ke sini</p>
+                <p className="font-semibold">Klik atau seret berkas draft PDF ke sini</p>
                 <p className="text-sm text-muted-foreground">
                   Mendukung upload tunggal &amp; banyak berkas sekaligus (Maksimal 4.5 MB per berkas)
                 </p>
@@ -245,7 +216,7 @@ export function UploadPage() {
           </CardContent>
         </Card>
 
-        {/* Global Batch Assignment Bar when multiple files */}
+        {/* Global Batch Assignment Bar when files exist */}
         {fileEntries.length > 0 && (
           <Card className="border-primary/20 bg-primary/5">
             <CardHeader className="pb-3">
@@ -254,7 +225,7 @@ export function UploadPage() {
                 Penugasan Penandatangan (Akademisi / Dosen)
               </CardTitle>
               <CardDescription>
-                Pilih Akademisi yang bertugas menandatangani dokumen di blockchain Sepolia.
+                Pilih Akademisi yang bertugas memeriksa dan menandatangani dokumen melalui editor visual dan blockchain Sepolia.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -290,7 +261,7 @@ export function UploadPage() {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold tracking-tight">
-                Daftar Dokumen yang Akan Diunggah ({fileEntries.length})
+                Daftar Draft Dokumen yang Akan Diunggah ({fileEntries.length})
               </h2>
               <label className="cursor-pointer">
                 <Button variant="outline" size="sm" type="button" asChild>
@@ -322,7 +293,7 @@ export function UploadPage() {
                             #{index + 1} {entry.file.name}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            Ukuran: {formatBytes(entry.file.size)}
+                            Ukuran: {formatBytes(entry.file.size)} · Status awal: <span className="font-medium text-foreground">Draft</span>
                           </p>
                         </div>
                       </div>
@@ -381,18 +352,11 @@ export function UploadPage() {
                       />
                     </div>
 
-                    {/* SHA-256 Preview */}
-                    <div className="flex items-center gap-2 rounded-md bg-muted/50 px-3 py-1.5 text-[11px] font-mono text-muted-foreground">
-                      <Hash className="h-3 w-3 text-primary shrink-0" />
-                      <span className="shrink-0 font-medium text-foreground">SHA-256:</span>
-                      <span className="truncate">
-                        {entry.hashing ? (
-                          <span className="flex items-center gap-1 text-primary">
-                            <Loader2 className="h-3 w-3 animate-spin" /> Menghitung hash…
-                          </span>
-                        ) : (
-                          entry.hash || "-"
-                        )}
+                    {/* Alur Info Note */}
+                    <div className="flex items-center gap-2 rounded-md bg-muted/40 px-3 py-1.5 text-[11px] text-muted-foreground">
+                      <Sparkles className="h-3 w-3 text-primary shrink-0" />
+                      <span>
+                        Hash SHA-256 akan otomatis dihitung pada <strong>PDF final</strong> setelah tanda tangan visual ditempatkan di editor.
                       </span>
                     </div>
                   </CardContent>
@@ -414,7 +378,7 @@ export function UploadPage() {
           </Button>
           <Button
             type="submit"
-            disabled={uploading || fileEntries.length === 0 || fileEntries.some((f) => f.hashing)}
+            disabled={uploading || fileEntries.length === 0}
             className="min-w-[170px]"
           >
             {uploading ? (
@@ -426,8 +390,8 @@ export function UploadPage() {
               <>
                 <UploadCloud className="mr-2 h-4 w-4" />
                 {fileEntries.length > 1
-                  ? `Upload ${fileEntries.length} Dokumen (Massal)`
-                  : "Upload Dokumen"}
+                  ? `Upload ${fileEntries.length} Draft Dokumen (Massal)`
+                  : "Upload Draft Dokumen"}
               </>
             )}
           </Button>

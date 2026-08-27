@@ -8,6 +8,7 @@ import { DashboardPage } from "@/pages/DashboardPage";
 import { DocumentsPage } from "@/pages/DocumentsPage";
 import { UploadPage } from "@/pages/UploadPage";
 import { DocumentDetailPage } from "@/pages/DocumentDetailPage";
+import { SignatureEditorPage } from "@/pages/SignatureEditorPage";
 import { VerifyPage } from "@/pages/VerifyPage";
 import { PublicVerifyPage } from "@/pages/PublicVerifyPage";
 import { AuditPage } from "@/pages/AuditPage";
@@ -22,6 +23,7 @@ export default function App() {
           {/* Public routes */}
           <Route path="/login" element={<LoginPage />} />
           <Route path="/verify-public" element={<PublicVerifyPage />} />
+          {/* Verify by documentId (from QR code) or SHA-256 hash */}
           <Route path="/verify/:hash" element={<PublicVerifyPage />} />
 
           {/* Protected app */}
@@ -48,6 +50,16 @@ export default function App() {
               }
             />
           </Route>
+
+          {/* Signature editor — full-page (no AppLayout sidebar), still protected */}
+          <Route
+            path="/documents/:id/sign-editor"
+            element={
+              <ProtectedRoute>
+                <SignatureEditorPage />
+              </ProtectedRoute>
+            }
+          />
 
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

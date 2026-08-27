@@ -10,7 +10,15 @@ export interface User {
   updatedAt?: string;
 }
 
-export type DocStatus = "SIGNED" | "UNSIGNED";
+export type DocStatus = "DRAFT" | "UNSIGNED" | "PENDING_BLOCKCHAIN" | "SIGNED";
+
+export interface SignaturePosition {
+  page: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 
 export interface DocumentItem {
   _id: string;
@@ -23,9 +31,11 @@ export interface DocumentItem {
   transactionHash?: string | null;
   blockNumber?: number | null;
   blockchainTimestamp?: string | null;
+  walletAddress?: string | null;
   status: DocStatus;
   uploader: User | string;
   assignedTo?: User | null;
+  signaturePosition?: SignaturePosition | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -52,7 +62,13 @@ export interface AuditItem {
 }
 
 export interface DashboardStats {
-  stats: { total: number; signed: number; unsigned: number };
+  stats: {
+    total: number;
+    signed: number;
+    unsigned: number;
+    pendingBlockchain: number;
+    draft: number;
+  };
   recentDocuments: DocumentItem[];
   recentActivity: AuditItem[];
 }
@@ -60,7 +76,7 @@ export interface DashboardStats {
 export interface VerifyResult {
   valid: boolean;
   status: "VALID" | "TIDAK VALID";
-  hash: string;
+  hash: string | null;
   onChain: {
     exists: boolean;
     signer: string | null;
@@ -75,8 +91,10 @@ export interface VerifyResult {
     transactionHash?: string | null;
     blockNumber?: number | null;
     blockchainTimestamp?: string | null;
+    walletAddress?: string | null;
     uploader?: User;
     assignedTo?: User | null;
+    signaturePosition?: SignaturePosition | null;
     createdAt?: string;
   } | null;
   signatures: SignatureItem[];
@@ -88,4 +106,14 @@ export interface BlockchainConfig {
   chainId: number;
   contractAddress: string | null;
   blockExplorer: string;
+}
+
+export interface AcademicSignature {
+  _id: string;
+  academicId: string;
+  mimeType: string;
+  fileName: string;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
 }

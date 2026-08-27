@@ -137,8 +137,8 @@ function VerifyResultView({ result }: { result: VerifyResult }) {
 
         <div className="space-y-2 rounded-lg border bg-muted/30 p-4 text-sm">
           <Row label="Hash SHA-256">
-            <span className="font-mono text-xs">{shortHash(result.hash, 14, 14)}</span>
-            <CopyButton value={result.hash} />
+            <span className="font-mono text-xs">{shortHash(result.hash ?? "", 14, 14)}</span>
+            <CopyButton value={result.hash ?? ""} />
           </Row>
           {result.document && (
             <>

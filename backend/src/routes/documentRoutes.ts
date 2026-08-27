@@ -3,6 +3,7 @@ import {
   uploadDocument,
   bulkUploadDocuments,
   assignDocument,
+  applySignature,
   listDocuments,
   getDocument,
   downloadDocument,
@@ -33,11 +34,19 @@ router.post(
   bulkUploadDocuments
 );
 
-// Assign document to an Academician (Admin & Staff Administrasi)
+// Assign document to an Akademisi (Admin & Staff Administrasi)
 router.put(
   "/:id/assign",
   authorize("admin", "staff_administrasi"),
   assignDocument
+);
+
+// Apply visual signature → generate PDF final → compute hash
+// Only Akademisi who is assigned (or admin) can apply
+router.post(
+  "/:id/apply-signature",
+  authorize("admin", "staff_akademik"),
+  applySignature
 );
 
 router.get("/", listDocuments);
@@ -46,7 +55,7 @@ router.get("/:id/file", downloadDocument);
 router.get("/:id/qrcode", documentQrPng);
 router.delete("/:id", deleteDocument);
 
-// Signing — only admin & staff_akademik may sign.
+// Signing — prepare (get hash) & confirm (record blockchain tx)
 router.post("/:id/sign/prepare", authorize("admin", "staff_akademik"), prepareSign);
 router.post("/:id/sign/confirm", authorize("admin", "staff_akademik"), confirmSign);
 

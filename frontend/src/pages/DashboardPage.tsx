@@ -8,6 +8,7 @@ import {
   ArrowRight,
   Upload,
   ShieldCheck,
+  Hourglass,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,16 +21,22 @@ import type { DashboardStats } from "@/types";
 const statCards = [
   { key: "total", label: "Total Dokumen", icon: FileText, color: "text-primary bg-primary/10" },
   {
+    key: "draft",
+    label: "Draft",
+    icon: Clock,
+    color: "text-muted-foreground bg-muted",
+  },
+  {
+    key: "pendingBlockchain",
+    label: "Menunggu Blockchain",
+    icon: Hourglass,
+    color: "text-warning bg-warning/10",
+  },
+  {
     key: "signed",
     label: "Ditandatangani",
     icon: CheckCircle2,
     color: "text-success bg-success/10",
-  },
-  {
-    key: "unsigned",
-    label: "Belum Ditandatangani",
-    icon: Clock,
-    color: "text-warning bg-warning/10",
   },
 ] as const;
 
@@ -50,37 +57,37 @@ export function DashboardPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
           <p className="text-sm text-muted-foreground">
-            Ringkasan dokumen dan aktivitas terbaru Anda.
+            Ringkasan dokumen akademik dan aktivitas penandatanganan blockchain Anda.
           </p>
         </div>
         <div className="flex gap-2">
           <Button asChild variant="outline">
             <Link to="/verify">
-              <ShieldCheck /> Verifikasi
+              <ShieldCheck className="mr-1.5 h-4 w-4" /> Verifikasi
             </Link>
           </Button>
           <Button asChild>
             <Link to="/upload">
-              <Upload /> Upload Dokumen
+              <Upload className="mr-1.5 h-4 w-4" /> Upload Dokumen
             </Link>
           </Button>
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {statCards.map((c) => (
           <Card key={c.key} className="card-hover">
-            <CardContent className="flex items-center justify-between p-6">
+            <CardContent className="flex items-center justify-between p-5">
               <div>
-                <p className="text-sm text-muted-foreground">{c.label}</p>
+                <p className="text-xs font-medium text-muted-foreground">{c.label}</p>
                 {loading ? (
-                  <Skeleton className="mt-2 h-9 w-16" />
+                  <Skeleton className="mt-2 h-8 w-14" />
                 ) : (
-                  <p className="mt-1 text-3xl font-bold">{data?.stats[c.key] ?? 0}</p>
+                  <p className="mt-1 text-2xl font-bold">{data?.stats[c.key] ?? 0}</p>
                 )}
               </div>
-              <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${c.color}`}>
-                <c.icon className="h-6 w-6" />
+              <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${c.color}`}>
+                <c.icon className="h-5 w-5" />
               </div>
             </CardContent>
           </Card>
@@ -89,7 +96,7 @@ export function DashboardPage() {
 
       <div className="grid gap-6 lg:grid-cols-5">
         <Card className="lg:col-span-3">
-          <CardHeader className="flex-row items-center justify-between">
+          <CardHeader className="flex-row items-center justify-between pb-3">
             <CardTitle className="text-base">Dokumen Terbaru</CardTitle>
             <Button asChild variant="ghost" size="sm">
               <Link to="/documents">
@@ -126,7 +133,7 @@ export function DashboardPage() {
         </Card>
 
         <Card className="lg:col-span-2">
-          <CardHeader>
+          <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
               <Activity className="h-4 w-4 text-primary" /> Aktivitas Terbaru
             </CardTitle>
@@ -161,7 +168,7 @@ function EmptyHint() {
       <p className="text-sm text-muted-foreground">Belum ada dokumen. Mulai dengan mengunggah.</p>
       <Button asChild size="sm">
         <Link to="/upload">
-          <Upload /> Upload Dokumen
+          <Upload className="mr-1.5 h-4 w-4" /> Upload Dokumen
         </Link>
       </Button>
     </div>

@@ -9,19 +9,32 @@ import { blockchain } from "../services/blockchainService";
 import { recordAudit } from "../services/auditService";
 
 /**
- * Step 1 — prepare. Returns everything the frontend needs to build the MetaMask
- * transaction (hash, contract address, chain). In mock mode the frontend will
- * skip MetaMask and go straight to /confirm.
+ * Step 1 — prepare. Returns hash of the FINAL signed PDF (already computed by
+ * apply-signature) and chain config so the frontend can build the MetaMask tx.
  */
 export const prepareSign = asyncHandler(async (req: Request, res: Response) => {
   const doc = await DocumentModel.findById(req.params.id);
   if (!doc) throw ApiError.notFound("Dokumen tidak ditemukan");
-  if (doc.status === "SIGNED") throw ApiError.conflict("Dokumen sudah ditandatangani");
+
+  // Must be in PENDING_BLOCKCHAIN state (visual signature applied)
+  if (doc.status === "SIGNED") {
+    throw ApiError.conflict("Dokumen sudah ditandatangani");
+  }
+  if (doc.status === "DRAFT" || doc.status === "UNSIGNED") {
+    throw ApiError.badRequest(
+      "Tanda tangan visual belum diterapkan. Gunakan editor tanda tangan terlebih dahulu."
+    );
+  }
+  if (!doc.hashDokumen) {
+    throw ApiError.badRequest("Hash dokumen belum tersedia. Terapkan tanda tangan visual terlebih dahulu.");
+  }
 
   const isAdmin = req.user!.role === "admin";
   const isAssigned = doc.assignedTo ? String(doc.assignedTo) === req.user!.sub : false;
   const isUploaderAkademik =
-    req.user!.role === "staff_akademik" && String(doc.uploader) === req.user!.sub && !doc.assignedTo;
+    req.user!.role === "staff_akademik" &&
+    String(doc.uploader) === req.user!.sub &&
+    !doc.assignedTo;
 
   if (!isAdmin && !isAssigned && !isUploaderAkademik) {
     throw ApiError.forbidden(
@@ -32,6 +45,7 @@ export const prepareSign = asyncHandler(async (req: Request, res: Response) => {
   res.json({
     success: true,
     hash: doc.hashDokumen,
+    documentId: String(doc._id),
     ...blockchain.config(),
   });
 });
@@ -46,9 +60,8 @@ const confirmSchema = z.object({
 });
 
 /**
- * Step 2 — confirm. In real mode we wait for the MetaMask transaction receipt
- * and verify the hash is on-chain. In mock mode we anchor the hash in the
- * in-memory chain. Either way we persist the Signature + update the Document.
+ * Step 2 — confirm. Validates the MetaMask transaction, anchors hash on-chain
+ * (or mock), persists Signature + updates Document status to SIGNED.
  */
 export const confirmSign = asyncHandler(async (req: Request, res: Response) => {
   const { walletAddress, signature, transactionHash } = confirmSchema.parse(req.body);
@@ -56,11 +69,21 @@ export const confirmSign = asyncHandler(async (req: Request, res: Response) => {
   const doc = await DocumentModel.findById(req.params.id);
   if (!doc) throw ApiError.notFound("Dokumen tidak ditemukan");
   if (doc.status === "SIGNED") throw ApiError.conflict("Dokumen sudah ditandatangani");
+  if (doc.status !== "PENDING_BLOCKCHAIN" && doc.status !== "UNSIGNED") {
+    throw ApiError.badRequest(
+      "Dokumen harus dalam status PENDING_BLOCKCHAIN sebelum dikonfirmasi ke blockchain."
+    );
+  }
+  if (!doc.hashDokumen) {
+    throw ApiError.badRequest("Hash dokumen tidak tersedia");
+  }
 
   const isAdmin = req.user!.role === "admin";
   const isAssigned = doc.assignedTo ? String(doc.assignedTo) === req.user!.sub : false;
   const isUploaderAkademik =
-    req.user!.role === "staff_akademik" && String(doc.uploader) === req.user!.sub && !doc.assignedTo;
+    req.user!.role === "staff_akademik" &&
+    String(doc.uploader) === req.user!.sub &&
+    !doc.assignedTo;
 
   if (!isAdmin && !isAssigned && !isUploaderAkademik) {
     throw ApiError.forbidden(
@@ -84,6 +107,7 @@ export const confirmSign = asyncHandler(async (req: Request, res: Response) => {
   doc.transactionHash = result.transactionHash;
   doc.blockNumber = result.blockNumber;
   doc.blockchainTimestamp = new Date(result.timestamp * 1000);
+  doc.walletAddress = walletAddress.toLowerCase();
   await doc.save();
 
   const sig = await Signature.create({
@@ -98,8 +122,22 @@ export const confirmSign = asyncHandler(async (req: Request, res: Response) => {
 
   await recordAudit({
     userId: req.user!.sub,
+    action: "BLOCKCHAIN_CONFIRM",
+    aktivitas: `Hash PDF final dokumen "${doc.namaDokumen}" berhasil dicatat ke blockchain`,
+    metadata: {
+      documentId: String(doc._id),
+      transactionHash: result.transactionHash,
+      blockNumber: result.blockNumber,
+      hash: doc.hashDokumen,
+      mock: result.mock,
+    },
+    req,
+  });
+
+  await recordAudit({
+    userId: req.user!.sub,
     action: "SIGN",
-    aktivitas: `Menandatangani dokumen "${doc.namaDokumen}"`,
+    aktivitas: `Dokumen "${doc.namaDokumen}" berhasil ditandatangani secara digital`,
     metadata: {
       documentId: String(doc._id),
       transactionHash: result.transactionHash,

@@ -7,8 +7,14 @@ export type AuditAction =
   | "BULK_UPLOAD"
   | "ASSIGN"
   | "DELETE"
+  | "OPEN_EDITOR"
+  | "APPLY_SIGNATURE"
+  | "GENERATE_HASH"
+  | "BLOCKCHAIN_CONFIRM"
   | "SIGN"
   | "VERIFY"
+  | "SIGNATURE_UPLOAD"
+  | "SIGNATURE_DELETE"
   | "USER_CREATE"
   | "USER_UPDATE"
   | "USER_DELETE"
@@ -36,8 +42,14 @@ const auditTrailSchema = new Schema<IAuditTrail>(
         "BULK_UPLOAD",
         "ASSIGN",
         "DELETE",
+        "OPEN_EDITOR",
+        "APPLY_SIGNATURE",
+        "GENERATE_HASH",
+        "BLOCKCHAIN_CONFIRM",
         "SIGN",
         "VERIFY",
+        "SIGNATURE_UPLOAD",
+        "SIGNATURE_DELETE",
         "USER_CREATE",
         "USER_UPDATE",
         "USER_DELETE",

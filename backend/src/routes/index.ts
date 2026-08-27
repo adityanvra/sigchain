@@ -5,6 +5,7 @@ import documentRoutes from "./documentRoutes";
 import verificationRoutes from "./verificationRoutes";
 import auditRoutes from "./auditRoutes";
 import dashboardRoutes from "./dashboardRoutes";
+import academicSignatureRoutes from "./academicSignatureRoutes";
 import { env } from "../config/env";
 import { blockchain } from "../services/blockchainService";
 
@@ -26,5 +27,6 @@ router.use("/documents", documentRoutes);
 router.use("/verify", verificationRoutes);
 router.use("/audit", auditRoutes);
 router.use("/dashboard", dashboardRoutes);
+router.use("/academic-signatures", academicSignatureRoutes);
 
 export default router;
