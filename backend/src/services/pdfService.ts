@@ -12,13 +12,14 @@ export interface ApplySignatureParams {
   y: number;
   width: number;
   height: number;
-  /** Optional QR code PNG buffer to embed at bottom-right of the same page */
-  qrBuffer?: Buffer;
 }
 
 /**
- * Embeds a signature image (PNG/JPEG) and an optional QR code into a PDF
- * at the specified position. Returns the modified PDF as a Buffer.
+ * Embeds a signature image (PNG/JPEG) into a PDF at the specified position.
+ * Returns the modified PDF as a Buffer.
+ *
+ * The image can be a handwritten signature PNG or a QR code PNG — the
+ * Akademisi chooses what to upload in their profile.
  *
  * Coordinate convention: (x, y) is measured from the TOP-LEFT corner of the
  * page (matching canvas/screen coords).  Conversion to pdf-lib's bottom-origin
@@ -34,7 +35,6 @@ export async function applySignatureToPdf(params: ApplySignatureParams): Promise
     y,
     width,
     height,
-    qrBuffer,
   } = params;
 
   const pdfDoc = await PDFDocument.load(pdfBuffer);
@@ -68,20 +68,6 @@ export async function applySignatureToPdf(params: ApplySignatureParams): Promise
     height,
     opacity: 1,
   });
-
-  // Embed QR code at bottom-right corner of the same page
-  if (qrBuffer) {
-    const { width: pageWidth } = targetPage.getSize();
-    const qrSize = 72; // 1 inch at 72 dpi
-    const margin = 10;
-    const qrImage = await pdfDoc.embedPng(qrBuffer);
-    targetPage.drawImage(qrImage, {
-      x: pageWidth - qrSize - margin,
-      y: margin,
-      width: qrSize,
-      height: qrSize,
-    });
-  }
 
   const signedBytes = await pdfDoc.save();
   return Buffer.from(signedBytes);

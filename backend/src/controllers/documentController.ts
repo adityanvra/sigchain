@@ -246,11 +246,8 @@ export const applySignature = asyncHandler(async (req: Request, res: Response) =
     throw ApiError.notFound("Berkas draft PDF tidak tersedia di server");
   }
 
-  // Generate QR code PNG for the verification URL (using documentId)
-  const verifyUrl = `${process.env.FRONTEND_URL || "https://sigchain-uad.vercel.app"}/verify/${doc._id}`;
-  const qrBuffer = await qrPngBuffer(verifyUrl);
-
-  // Apply signature + QR to PDF
+  // Apply signature to PDF (no QR embedded — QR is only shown in the
+  // blockchain verification panel on the document detail page)
   const signedPdfBuffer = await applySignatureToPdf({
     pdfBuffer: draftBuffer,
     signatureImageBuffer: sigRecord.imageData,
@@ -260,7 +257,6 @@ export const applySignature = asyncHandler(async (req: Request, res: Response) =
     y: params.y,
     width: params.width,
     height: params.height,
-    qrBuffer,
   });
 
   // Hash the FINAL signed PDF
