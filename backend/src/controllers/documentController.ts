@@ -100,10 +100,12 @@ export const uploadDocument = asyncHandler(async (req: Request, res: Response) =
   });
 
   const createdDoc = await DocumentModel.findById(doc._id)
+    .select("-draftFileData -signedFileData -fileData")
     .populate("uploader", "nama email role walletAddress")
     .populate("assignedTo", "nama email role walletAddress");
 
   res.status(201).json({ success: true, document: createdDoc });
+
 });
 
 // ---------------------------------------------------------------------------
@@ -185,11 +187,13 @@ export const bulkUploadDocuments = asyncHandler(async (req: Request, res: Respon
   const populatedDocs = await DocumentModel.find({
     _id: { $in: createdDocs.map((d) => d._id) },
   })
+    .select("-draftFileData -signedFileData -fileData")
     .populate("uploader", "nama email role walletAddress")
     .populate("assignedTo", "nama email role walletAddress")
     .sort({ createdAt: -1 });
 
   res.status(201).json({ success: true, count: populatedDocs.length, documents: populatedDocs });
+
 });
 
 // ---------------------------------------------------------------------------
@@ -262,18 +266,25 @@ export const applySignature = asyncHandler(async (req: Request, res: Response) =
   // Hash the FINAL signed PDF
   const finalHash = sha256Buffer(signedPdfBuffer);
 
-  // Persist
-  doc.signedFileData = signedPdfBuffer;
-  doc.hashDokumen = finalHash;
-  doc.status = "PENDING_BLOCKCHAIN";
-  doc.signaturePosition = {
-    page: params.page,
-    x: params.x,
-    y: params.y,
-    width: params.width,
-    height: params.height,
-  };
-  await doc.save();
+  // Persist — use updateOne to atomically write buffer fields without loading
+  // the full document back into memory (avoids Vercel response size limit)
+  await DocumentModel.updateOne(
+    { _id: doc._id },
+    {
+      $set: {
+        signedFileData: signedPdfBuffer,
+        hashDokumen: finalHash,
+        status: "PENDING_BLOCKCHAIN",
+        signaturePosition: {
+          page: params.page,
+          x: params.x,
+          y: params.y,
+          width: params.width,
+          height: params.height,
+        },
+      },
+    }
+  );
 
   await recordAudit({
     userId: req.user!.sub,
@@ -295,7 +306,9 @@ export const applySignature = asyncHandler(async (req: Request, res: Response) =
     req,
   });
 
+  // Fetch updated doc WITHOUT binary buffer fields to keep response small
   const updatedDoc = await DocumentModel.findById(doc._id)
+    .select("-draftFileData -signedFileData -fileData")
     .populate("uploader", "nama email role walletAddress")
     .populate("assignedTo", "nama email role walletAddress");
 
@@ -307,6 +320,8 @@ export const applySignature = asyncHandler(async (req: Request, res: Response) =
       "Tanda tangan berhasil diterapkan. Lanjutkan dengan konfirmasi MetaMask untuk mencatat ke blockchain.",
   });
 });
+
+
 
 // ---------------------------------------------------------------------------
 // Assign document to an Akademisi
@@ -352,8 +367,10 @@ export const assignDocument = asyncHandler(async (req: Request, res: Response) =
   });
 
   const updatedDoc = await DocumentModel.findById(doc._id)
+    .select("-draftFileData -signedFileData -fileData")
     .populate("uploader", "nama email role walletAddress")
     .populate("assignedTo", "nama email role walletAddress");
+
 
   res.json({ success: true, document: updatedDoc });
 });
@@ -370,11 +387,13 @@ export const listDocuments = asyncHandler(async (req: Request, res: Response) =>
   if (q) filter.namaDokumen = { $regex: q, $options: "i" };
 
   const documents = await DocumentModel.find(filter)
+    .select("-draftFileData -signedFileData -fileData")
     .populate("uploader", "nama email role")
     .populate("assignedTo", "nama email role walletAddress")
     .sort({ createdAt: -1 });
 
   res.json({ success: true, documents });
+
 });
 
 // ---------------------------------------------------------------------------
@@ -382,8 +401,10 @@ export const listDocuments = asyncHandler(async (req: Request, res: Response) =>
 // ---------------------------------------------------------------------------
 export const getDocument = asyncHandler(async (req: Request, res: Response) => {
   const doc = await DocumentModel.findById(req.params.id)
+    .select("-draftFileData -signedFileData -fileData")
     .populate("uploader", "nama email role walletAddress")
     .populate("assignedTo", "nama email role walletAddress");
+
 
   if (!doc) throw ApiError.notFound("Dokumen tidak ditemukan");
 
