@@ -23,9 +23,17 @@ export const getMySignatureImage = asyncHandler(async (req: Request, res: Respon
 
   if (!sig || !sig.imageData) throw ApiError.notFound("Tanda tangan tidak ditemukan");
 
-  res.setHeader("Content-Type", sig.mimeType);
-  res.setHeader("Content-Disposition", `inline; filename="${sig.fileName}"`);
-  res.send(sig.imageData);
+  const buffer = Buffer.isBuffer(sig.imageData)
+    ? sig.imageData
+    : (sig.imageData as any).value
+    ? (sig.imageData as any).value()
+    : Buffer.from(sig.imageData);
+
+  res.setHeader("Content-Type", sig.mimeType || "image/png");
+  res.setHeader("Content-Length", buffer.length);
+  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  res.setHeader("Content-Disposition", `inline; filename="${sig.fileName || "signature.png"}"`);
+  res.end(buffer);
 });
 
 /** GET /academic-signatures/:id/image — serves the image for a specific signature (by owner or admin) */
@@ -39,9 +47,17 @@ export const getSignatureImage = asyncHandler(async (req: Request, res: Response
     throw ApiError.forbidden("Tidak ada izin mengakses gambar tanda tangan ini");
   }
 
-  res.setHeader("Content-Type", sig.mimeType);
-  res.setHeader("Content-Disposition", `inline; filename="${sig.fileName}"`);
-  res.send(sig.imageData);
+  const buffer = Buffer.isBuffer(sig.imageData)
+    ? sig.imageData
+    : (sig.imageData as any).value
+    ? (sig.imageData as any).value()
+    : Buffer.from(sig.imageData);
+
+  res.setHeader("Content-Type", sig.mimeType || "image/png");
+  res.setHeader("Content-Length", buffer.length);
+  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  res.setHeader("Content-Disposition", `inline; filename="${sig.fileName || "signature.png"}"`);
+  res.end(buffer);
 });
 
 /** POST /academic-signatures — upload new signature image (replaces existing active) */

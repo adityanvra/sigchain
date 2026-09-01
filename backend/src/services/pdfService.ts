@@ -25,6 +25,24 @@ export interface ApplySignatureParams {
  * page (matching canvas/screen coords).  Conversion to pdf-lib's bottom-origin
  * system is handled internally.
  */
+/**
+ * Helper to convert any Buffer, BSON Binary, or Uint8Array into a fresh, dedicated
+ * Uint8Array whose byteOffset is strictly 0 and whose underlying ArrayBuffer matches
+ * its length. This fixes a known pdf-lib JpegEmbedder bug where pdf-lib creates
+ * new DataView(imageData.buffer) without passing imageData.byteOffset, causing
+ * "SOI not found in JPEG" errors when Node buffers share an internal pool.
+ */
+function toDedicatedUint8Array(input: Buffer | Uint8Array | any): Uint8Array {
+  const buf: Buffer = Buffer.isBuffer(input)
+    ? input
+    : input?.value
+    ? input.value()
+    : Buffer.from(input);
+  const dedicated = new Uint8Array(buf.length);
+  dedicated.set(buf);
+  return dedicated;
+}
+
 export async function applySignatureToPdf(params: ApplySignatureParams): Promise<Buffer> {
   const {
     pdfBuffer,
@@ -37,7 +55,7 @@ export async function applySignatureToPdf(params: ApplySignatureParams): Promise
     height,
   } = params;
 
-  const pdfDoc = await PDFDocument.load(pdfBuffer);
+  const pdfDoc = await PDFDocument.load(pdfBuffer, { ignoreEncryption: true });
   const pages = pdfDoc.getPages();
 
   if (pageIndex < 0 || pageIndex >= pages.length) {
@@ -49,13 +67,24 @@ export async function applySignatureToPdf(params: ApplySignatureParams): Promise
   const targetPage: PDFPage = pages[pageIndex];
   const { height: pageHeight } = targetPage.getSize();
 
-  // Embed signature image
+  // Create clean, dedicated Uint8Array with byteOffset === 0
+  const dedicatedSig = toDedicatedUint8Array(signatureImageBuffer);
+
+  // Detect image type by magic bytes:
+  // PNG magic bytes: 0x89 0x50 0x4E 0x47 (\x89PNG)
+  // JPEG magic bytes: 0xFF 0xD8 (\xFF\xD8)
+  const isPng =
+    dedicatedSig.length >= 4 &&
+    dedicatedSig[0] === 0x89 &&
+    dedicatedSig[1] === 0x50 &&
+    dedicatedSig[2] === 0x4E &&
+    dedicatedSig[3] === 0x47;
+
   let sigImage;
-  const isJpeg = signatureMimeType.includes("jpeg") || signatureMimeType.includes("jpg");
-  if (isJpeg) {
-    sigImage = await pdfDoc.embedJpg(signatureImageBuffer);
+  if (isPng || signatureMimeType.includes("png")) {
+    sigImage = await pdfDoc.embedPng(dedicatedSig);
   } else {
-    sigImage = await pdfDoc.embedPng(signatureImageBuffer);
+    sigImage = await pdfDoc.embedJpg(dedicatedSig);
   }
 
   // Convert from top-origin (screen) to bottom-origin (PDF)

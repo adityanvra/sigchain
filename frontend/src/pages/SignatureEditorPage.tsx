@@ -125,13 +125,20 @@ export function SignatureEditorPage() {
         setSignature(data.signature || null);
         if (data.signature) {
           const token = getToken();
-          const res = await fetch(`${config.apiUrl}/academic-signatures/my/image`, {
-            headers: token ? { Authorization: `Bearer ${token}` } : {},
-          });
-          if (!res.ok) throw new Error("Gagal memuat gambar tanda tangan");
-          const blob = await res.blob();
-          blobUrl = URL.createObjectURL(blob);
-          setSigImgUrl(blobUrl);
+          try {
+            const res = await fetch(`${config.apiUrl}/academic-signatures/my/image`, {
+              headers: token ? { Authorization: `Bearer ${token}` } : {},
+            });
+            if (!res.ok) throw new Error("Blob fetch returned non-200");
+            const blob = await res.blob();
+            blobUrl = URL.createObjectURL(blob);
+            setSigImgUrl(blobUrl);
+          } catch {
+            // Fallback: gunakan direct query token URL
+            setSigImgUrl(
+              `${config.apiUrl}/academic-signatures/my/image?token=${token || ""}&t=${Date.now()}`
+            );
+          }
         }
       } catch {
         /* silent — user will see "Belum ada tanda tangan" */

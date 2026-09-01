@@ -16,9 +16,13 @@ declare global {
 export function authenticate(req: Request, _res: Response, next: NextFunction) {
   const header = req.headers.authorization;
   const token =
-    header && header.startsWith("Bearer ") ? header.slice(7) : (req.cookies?.token as string | undefined);
+    header && header.startsWith("Bearer ")
+      ? header.slice(7)
+      : (req.cookies?.token as string | undefined) ||
+        (req.query?.token as string | undefined);
 
   if (!token) return next(ApiError.unauthorized("Missing authentication token"));
+
 
   try {
     req.user = verifyToken(token);
