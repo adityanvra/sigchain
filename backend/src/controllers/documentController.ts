@@ -12,6 +12,7 @@ import { qrPngBuffer, qrDataUrl, verifyUrlFor } from "../services/qrService";
 import { blockchain } from "../services/blockchainService";
 import { applySignatureToPdf } from "../services/pdfService";
 import { Types } from "mongoose";
+import { env } from "../config/env";
 
 const uploadMetaSchema = z.object({
   namaDokumen: z.string().min(1).max(200).optional(),
@@ -396,6 +397,19 @@ export const listDocuments = asyncHandler(async (req: Request, res: Response) =>
 
 });
 
+function getFrontendBaseUrl(req: Request): string {
+  if (process.env.FRONTEND_URL) return process.env.FRONTEND_URL.replace(/\/$/, "");
+  const origin = req.headers.origin;
+  if (origin && typeof origin === "string") return origin.replace(/\/$/, "");
+  const referer = req.headers.referer;
+  if (referer && typeof referer === "string") {
+    try {
+      return new URL(referer).origin;
+    } catch {}
+  }
+  return env.PUBLIC_VERIFY_URL.replace(/\/verify\/?$/, "") || "http://localhost:5173";
+}
+
 // ---------------------------------------------------------------------------
 // Get single document detail
 // ---------------------------------------------------------------------------
@@ -425,11 +439,12 @@ export const getDocument = asyncHandler(async (req: Request, res: Response) => {
     .populate("signer", "nama email role")
     .sort({ timestamp: -1 });
 
-  const qr = doc.hashDokumen
-    ? await qrDataUrl(doc.hashDokumen)
-    : null;
+  const frontendBase = getFrontendBaseUrl(req);
+  const verifyUrl = `${frontendBase}/verify/${doc._id}`;
 
-  const verifyUrl = `${process.env.FRONTEND_URL || "https://sigchain-uad.vercel.app"}/verify/${doc._id}`;
+  const qr = doc.hashDokumen
+    ? await qrDataUrl(verifyUrl)
+    : null;
 
   res.json({
     success: true,
@@ -502,7 +517,8 @@ export const documentQrPng = asyncHandler(async (req: Request, res: Response) =>
   if (!doc) throw ApiError.notFound("Dokumen tidak ditemukan");
 
   // QR points to public verify page for this document
-  const verifyUrl = `${process.env.FRONTEND_URL || "https://sigchain-uad.vercel.app"}/verify/${doc._id}`;
+  const frontendBase = getFrontendBaseUrl(req);
+  const verifyUrl = `${frontendBase}/verify/${doc._id}`;
   const png = await qrPngBuffer(verifyUrl);
   res.setHeader("Content-Type", "image/png");
   res.setHeader("Content-Length", png.length);

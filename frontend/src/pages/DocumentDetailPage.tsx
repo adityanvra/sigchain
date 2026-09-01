@@ -109,6 +109,12 @@ export function DocumentDetailPage() {
   const uploader = doc?.uploader as User | undefined;
   const assignee = doc?.assignedTo as User | undefined;
 
+  const currentOrigin = typeof window !== "undefined" ? window.location.origin : "";
+  const publicVerifyUrl = currentOrigin && doc?._id
+    ? `${currentOrigin}/verify/${doc._id}`
+    : data?.verifyUrl || "";
+
+
   // Can this user open the signature editor?
   let canSign = false;
   if (user && doc && (doc.status === "DRAFT" || doc.status === "UNSIGNED" || doc.status === "PENDING_BLOCKCHAIN")) {
@@ -487,15 +493,22 @@ export function DocumentDetailPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col items-center gap-4">
-              {doc.status === "SIGNED" && data.qrCode ? (
+              {doc.status === "SIGNED" && publicVerifyUrl ? (
                 <>
-                  <div className="rounded-xl border bg-white p-4">
-                    <QRCodeCanvas value={data.verifyUrl} size={170} />
+                  <div className="rounded-xl border bg-white p-4 shadow-sm">
+                    <QRCodeCanvas value={publicVerifyUrl} size={170} />
                   </div>
                   <p className="text-center text-xs text-muted-foreground">
                     Scan untuk membuka halaman verifikasi publik.
                   </p>
-                  <CopyButton value={data.verifyUrl} label="Salin tautan verifikasi" />
+                  <div className="flex flex-col gap-2 w-full">
+                    <CopyButton value={publicVerifyUrl} label="Salin tautan verifikasi" />
+                    <Button asChild variant="outline" size="sm" className="w-full gap-2 text-xs">
+                      <a href={publicVerifyUrl} target="_blank" rel="noopener noreferrer">
+                        <ExternalLink className="h-3.5 w-3.5" /> Buka Halaman Verifikasi
+                      </a>
+                    </Button>
+                  </div>
                 </>
               ) : (
                 <div className="w-full rounded-xl border border-dashed p-6 text-center">
