@@ -215,17 +215,18 @@ export function DocumentDetailPage() {
 
   async function openPreview() {
     setPreviewOpen(true);
-    if (previewUrl) return;
+    setPreviewUrl(null);
     try {
       // Serve signed PDF if available, otherwise draft
       const url = doc?.status === "SIGNED" || doc?.status === "PENDING_BLOCKCHAIN"
-        ? fileUrl
-        : `${fileUrl}?type=draft`;
+        ? `${fileUrl}?t=${Date.now()}`
+        : `${fileUrl}?type=draft&t=${Date.now()}`;
       const r = await fetch(url, { headers: { Authorization: `Bearer ${getToken()}` } });
+      if (!r.ok) throw new Error("Gagal mengambil file PDF");
       const blob = await r.blob();
       setPreviewUrl(URL.createObjectURL(blob));
     } catch {
-      toast.error("Gagal memuat pratinjau");
+      toast.error("Gagal memuat pratinjau dokumen");
     }
   }
 
@@ -587,18 +588,36 @@ export function DocumentDetailPage() {
       </Dialog>
 
       {/* PDF preview dialog */}
-      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-        <DialogContent className="h-[85vh] max-w-4xl p-0">
-          <DialogHeader className="border-b p-4">
-            <DialogTitle>{doc.namaDokumen}</DialogTitle>
+      <Dialog
+        open={previewOpen}
+        onOpenChange={(open) => {
+          setPreviewOpen(open);
+          if (!open && previewUrl) {
+            URL.revokeObjectURL(previewUrl);
+            setPreviewUrl(null);
+          }
+        }}
+      >
+        <DialogContent className="h-[90vh] max-w-5xl p-0 flex flex-col gap-0 overflow-hidden rounded-xl border">
+          <DialogHeader className="border-b px-5 py-3.5 shrink-0 bg-background flex flex-row items-center justify-between">
+            <DialogTitle className="text-base font-semibold truncate pr-8">
+              {doc.namaDokumen}
+            </DialogTitle>
           </DialogHeader>
-          {previewUrl ? (
-            <iframe title="preview" src={previewUrl} className="h-full w-full rounded-b-xl" />
-          ) : (
-            <div className="flex h-full items-center justify-center">
-              <Loader2 className="h-6 w-6 animate-spin text-primary" />
-            </div>
-          )}
+          <div className="flex-1 w-full min-h-0 bg-muted/20 relative">
+            {previewUrl ? (
+              <iframe
+                title="preview"
+                src={previewUrl}
+                className="w-full h-full border-0 block"
+              />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center flex-col gap-2">
+                <Loader2 className="h-7 w-7 animate-spin text-primary" />
+                <p className="text-xs text-muted-foreground">Memuat pratinjau dokumen…</p>
+              </div>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </div>

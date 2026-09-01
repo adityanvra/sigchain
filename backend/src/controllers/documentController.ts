@@ -480,10 +480,18 @@ export const downloadDocument = asyncHandler(async (req: Request, res: Response)
 
   if (!fileBuffer) throw ApiError.notFound("Berkas tidak tersedia di server");
 
+  const buffer = Buffer.isBuffer(fileBuffer)
+    ? fileBuffer
+    : (fileBuffer as any).value
+    ? (fileBuffer as any).value()
+    : Buffer.from(fileBuffer);
+
   const disposition = req.query.download === "1" ? "attachment" : "inline";
   res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Length", buffer.length);
+  res.setHeader("Cache-Control", "private, no-cache, no-store, must-revalidate");
   res.setHeader("Content-Disposition", `${disposition}; filename="${fileName}"`);
-  res.send(fileBuffer);
+  res.end(buffer);
 });
 
 // ---------------------------------------------------------------------------
@@ -497,7 +505,8 @@ export const documentQrPng = asyncHandler(async (req: Request, res: Response) =>
   const verifyUrl = `${process.env.FRONTEND_URL || "https://sigchain-uad.vercel.app"}/verify/${doc._id}`;
   const png = await qrPngBuffer(verifyUrl);
   res.setHeader("Content-Type", "image/png");
-  res.send(png);
+  res.setHeader("Content-Length", png.length);
+  res.end(png);
 });
 
 // ---------------------------------------------------------------------------
