@@ -46,5 +46,6 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
   }
 
   console.error("[error]", err);
-  res.status(500).json({ success: false, message: "Internal server error" });
+  const errMsg = err instanceof Error ? err.message : "Terjadi kesalahan pada server";
+  res.status(500).json({ success: false, message: errMsg });
 }

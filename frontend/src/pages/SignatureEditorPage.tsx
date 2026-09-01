@@ -66,20 +66,20 @@ export function SignatureEditorPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [scale, setScale] = useState(1.2);
   const [renderingPdf, setRenderingPdf] = useState(false);
-  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
+  const [pageSize, setPageSize] = useState({ width: 595, height: 842 }); // Native PDF points (unscaled)
 
   // Signature
   const [signature, setSignature] = useState<AcademicSignature | null>(null);
   const [sigImgUrl, setSigImgUrl] = useState<string | null>(null);
   const [loadingSig, setLoadingSig] = useState(false);
 
-  // Placement (drag & drop)
+  // Placement (stored in NATIVE PDF POINTS — unscaled 72 DPI, independent of zoom level)
   const [placement, setPlacement] = useState<SigPlacement>({
     page: 0,
-    x: 50,
-    y: 50,
-    width: 160,
-    height: 65,
+    x: 350,
+    y: 600,
+    width: 140,
+    height: 60,
   });
   const [dragging, setDragging] = useState(false);
   const [resizing, setResizing] = useState(false);
@@ -154,8 +154,6 @@ export function SignatureEditorPage() {
     };
   }, []);
 
-
-
   // ─── Load PDF ─────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!doc) return;
@@ -190,11 +188,16 @@ export function SignatureEditorPage() {
     setRenderingPdf(true);
     try {
       const page = await pdfDoc.getPage(currentPage);
+
+      // 1. Get native unscaled dimensions (PDF points at scale 1.0)
+      const unscaledViewport = page.getViewport({ scale: 1.0 });
+      setPageSize({ width: unscaledViewport.width, height: unscaledViewport.height });
+
+      // 2. Render on canvas with current scale (zoom)
       const viewport = page.getViewport({ scale });
       const canvas = canvasRef.current;
       canvas.width = viewport.width;
       canvas.height = viewport.height;
-      setCanvasSize({ width: viewport.width, height: viewport.height });
       const ctx = canvas.getContext("2d")!;
       await page.render({ canvasContext: ctx, viewport, canvas }).promise;
     } finally {
@@ -204,7 +207,7 @@ export function SignatureEditorPage() {
 
   useEffect(() => { renderPage(); }, [renderPage]);
 
-  // ─── Drag handlers ────────────────────────────────────────────────────────
+  // ─── Drag handlers (converting screen delta -> native PDF points) ─────────
   function onSigMouseDown(e: React.MouseEvent) {
     e.preventDefault();
     setDragging(true);
@@ -221,21 +224,21 @@ export function SignatureEditorPage() {
   useEffect(() => {
     function onMove(e: MouseEvent) {
       if (dragging) {
-        const dx = e.clientX - dragStart.current.mx;
-        const dy = e.clientY - dragStart.current.my;
+        const dx = (e.clientX - dragStart.current.mx) / scale;
+        const dy = (e.clientY - dragStart.current.my) / scale;
         setPlacement((p) => ({
           ...p,
-          x: Math.max(0, Math.min(dragStart.current.ox + dx, canvasSize.width - p.width)),
-          y: Math.max(0, Math.min(dragStart.current.oy + dy, canvasSize.height - p.height)),
+          x: Math.max(0, Math.min(dragStart.current.ox + dx, pageSize.width - p.width)),
+          y: Math.max(0, Math.min(dragStart.current.oy + dy, pageSize.height - p.height)),
         }));
       }
       if (resizing) {
-        const dx = e.clientX - resizeStart.current.mx;
-        const dy = e.clientY - resizeStart.current.my;
+        const dx = (e.clientX - resizeStart.current.mx) / scale;
+        const dy = (e.clientY - resizeStart.current.my) / scale;
         setPlacement((p) => ({
           ...p,
-          width: Math.max(60, Math.min(resizeStart.current.ow + dx, 400)),
-          height: Math.max(30, Math.min(resizeStart.current.oh + dy, 200)),
+          width: Math.max(40, Math.min(resizeStart.current.ow + dx, pageSize.width - p.x)),
+          height: Math.max(20, Math.min(resizeStart.current.oh + dy, pageSize.height - p.y)),
         }));
       }
     }
@@ -243,7 +246,7 @@ export function SignatureEditorPage() {
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
     return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
-  }, [dragging, resizing, canvasSize]);
+  }, [dragging, resizing, scale, pageSize]);
 
   // ─── Apply signature ───────────────────────────────────────────────────────
   async function handleApply() {
@@ -253,6 +256,7 @@ export function SignatureEditorPage() {
     }
     setApplying(true);
     try {
+      // Send EXACT unscaled native PDF points to backend
       const { data } = await api.post(`/documents/${id}/apply-signature`, {
         page: currentPage - 1,   // 0-indexed for backend
         x: Math.round(placement.x),
@@ -269,6 +273,8 @@ export function SignatureEditorPage() {
       setApplying(false);
     }
   }
+
+
 
   // ─── Blockchain confirmation ───────────────────────────────────────────────
   async function handleSign() {
@@ -436,10 +442,10 @@ export function SignatureEditorPage() {
                     dragging ? "opacity-90 shadow-lg" : "opacity-80 hover:opacity-100"
                   }`}
                   style={{
-                    left: placement.x,
-                    top: placement.y,
-                    width: placement.width,
-                    height: placement.height,
+                    left: placement.x * scale,
+                    top: placement.y * scale,
+                    width: placement.width * scale,
+                    height: placement.height * scale,
                   }}
                   onMouseDown={onSigMouseDown}
                 >
@@ -456,7 +462,7 @@ export function SignatureEditorPage() {
                   />
                   {/* Position label */}
                   <div className="absolute -top-5 left-0 text-[9px] font-mono bg-primary text-primary-foreground px-1 rounded whitespace-nowrap">
-                    ({Math.round(placement.x)}, {Math.round(placement.y)}) {Math.round(placement.width)}×{Math.round(placement.height)}
+                    ({Math.round(placement.x)}, {Math.round(placement.y)}) {Math.round(placement.width)}×{Math.round(placement.height)} pt
                   </div>
                 </div>
               )}

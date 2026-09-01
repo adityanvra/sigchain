@@ -55,8 +55,10 @@ export async function applySignatureToPdf(params: ApplySignatureParams): Promise
     height,
   } = params;
 
-  const pdfDoc = await PDFDocument.load(pdfBuffer, { ignoreEncryption: true });
+  const cleanPdfBytes = toDedicatedUint8Array(pdfBuffer);
+  const pdfDoc = await PDFDocument.load(cleanPdfBytes, { ignoreEncryption: true });
   const pages = pdfDoc.getPages();
+
 
   if (pageIndex < 0 || pageIndex >= pages.length) {
     throw new Error(

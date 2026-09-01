@@ -27,8 +27,8 @@ const applySignatureSchema = z.object({
   page: z.coerce.number().int().min(0).default(0),
   x: z.coerce.number().min(0).default(0),
   y: z.coerce.number().min(0).default(0),
-  width: z.coerce.number().min(10).max(500).default(150),
-  height: z.coerce.number().min(10).max(300).default(60),
+  width: z.coerce.number().min(5).max(2000).default(150),
+  height: z.coerce.number().min(5).max(2000).default(60),
   /** Optional: specific AcademicSignature._id to use; falls back to user's active sig */
   signatureId: z.string().optional(),
 });
