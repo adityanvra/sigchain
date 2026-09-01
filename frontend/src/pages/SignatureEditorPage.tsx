@@ -113,23 +113,41 @@ export function SignatureEditorPage() {
   }, [id, navigate]);
 
   // ─── Load signature ────────────────────────────────────────────────────────
+  // Gambar tanda tangan butuh Authorization header — <img src="..."> tidak bisa
+  // mengirimnya langsung, jadi kita fetch dengan token lalu buat blob URL.
   useEffect(() => {
+    let blobUrl: string | null = null;
+
     async function load() {
       setLoadingSig(true);
       try {
         const { data } = await api.get("/academic-signatures/my");
         setSignature(data.signature || null);
         if (data.signature) {
-          setSigImgUrl(`${config.apiUrl}/academic-signatures/my/image`);
+          const token = getToken();
+          const res = await fetch(`${config.apiUrl}/academic-signatures/my/image`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          });
+          if (!res.ok) throw new Error("Gagal memuat gambar tanda tangan");
+          const blob = await res.blob();
+          blobUrl = URL.createObjectURL(blob);
+          setSigImgUrl(blobUrl);
         }
       } catch {
-        /* silent */
+        /* silent — user will see "Belum ada tanda tangan" */
       } finally {
         setLoadingSig(false);
       }
     }
     load();
+
+    // Cleanup blob URL saat komponen unmount agar tidak memory leak
+    return () => {
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+    };
   }, []);
+
+
 
   // ─── Load PDF ─────────────────────────────────────────────────────────────
   useEffect(() => {

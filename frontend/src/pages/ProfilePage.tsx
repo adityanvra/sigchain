@@ -41,14 +41,26 @@ export function ProfilePage() {
   const loadSignature = useCallback(async () => {
     if (!isAkademisi) return;
     setLoadingSig(true);
+    // Revoke previous blob URL to prevent memory leak
+    setSigPreviewUrl((prev) => {
+      if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
+      return null;
+    });
     try {
       const { data } = await api.get("/academic-signatures/my");
       setSignature(data.signature || null);
       if (data.signature) {
-        // Load preview image from separate endpoint
-        setSigPreviewUrl(`${config.apiUrl}/academic-signatures/my/image?t=${Date.now()}`);
-      } else {
-        setSigPreviewUrl(null);
+        // Fetch image dengan Authorization header lalu buat blob URL
+        // (elemen <img src="..."> tidak bisa mengirim header auth secara langsung)
+        const { getToken } = await import("@/lib/api");
+        const token = getToken();
+        const res = await fetch(`${config.apiUrl}/academic-signatures/my/image`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (res.ok) {
+          const blob = await res.blob();
+          setSigPreviewUrl(URL.createObjectURL(blob));
+        }
       }
     } catch {
       /* silent */
@@ -56,6 +68,7 @@ export function ProfilePage() {
       setLoadingSig(false);
     }
   }, [isAkademisi]);
+
 
   useEffect(() => {
     loadSignature();
