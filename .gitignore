@@ -28,3 +28,7 @@ Thumbs.db
 # Local research sources, extracted thesis pages, and generated evidence
 /tmp/
 /output/
+
+# Local documentation
+*.md
+*.mdx
