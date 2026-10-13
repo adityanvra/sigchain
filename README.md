@@ -2,9 +2,13 @@
 
 **Secure Integrated Governance Chain — Universitas Ahmad Dahlan**
 
-Aplikasi web untuk mengelola dokumen akademik secara digital, yang menjamin
-dokumen **asli, tidak dipalsukan, dan bisa diverifikasi siapa saja** — dengan
-bantuan **tanda tangan elektronik (MetaMask)** dan **blockchain Ethereum**.
+Aplikasi web untuk mengelola dokumen akademik secara digital dan memeriksa
+**kesesuaian berkas PDF dengan hash yang tercatat** — dengan
+bantuan persetujuan pengguna dan pencatatan hash PDF final pada **blockchain Ethereum Sepolia** melalui wallet server.
+
+Alur baru tidak membutuhkan MetaMask di browser. Panduan backend lokal dan bukti Etherscan tersedia di [SERVER-SEPOLIA.md](SERVER-SEPOLIA.md).
+
+Revisi semhas aplikasi telah diterapkan: role Mahasiswa, pemeriksaan TU, penandatangan personal berurutan dengan kapasitas jabatan, pengembalian/revisi versi, QR pada PDF final, notifikasi aplikasi dan email opsional. Panduan lengkap: [REVISI-SEMHAS.md](REVISI-SEMHAS.md). Rancangan dan bahan validasi TU tersedia di folder `docs`; draf revisi naskah tersedia di [Draf-Revisi-Laporan.md](output/semhas/Draf-Revisi-Laporan.md).
 
 ---
 
@@ -15,8 +19,8 @@ Kalau isi dokumen berubah 1 huruf saja, sidik jarinya langsung berubah total.
 
 SIGCHAIN bekerja seperti ini:
 
-1. **Upload** dokumen PDF → sistem menghitung sidik jarinya.
-2. **Tanda tangan** pakai MetaMask → sidik jari itu dicatat di **blockchain**
+1. **Mahasiswa mengunggah PDF** → menyimpan alur → mengajukan ke TU → TU memeriksa → setiap penandatangan memberi persetujuan sesuai giliran → sistem menambahkan QR dan menghitung hash PDF final.
+2. **Tandatangani dan Sahkan** → wallet backend mencatat hash di **blockchain**
    (buku catatan publik yang **tidak bisa diubah/dihapus** siapa pun).
 3. **Verifikasi** kapan saja → sistem menghitung ulang sidik jari dokumen lalu
    membandingkannya dengan yang ada di blockchain.
@@ -33,7 +37,7 @@ SIGCHAIN bekerja seperti ini:
 
 ```
         ┌─────────────────────────────┐
-        │   Pengguna + MetaMask       │  ← tanda tangan dilakukan di sini
+        │   Pengguna terdaftar        │  ← menyetujui dokumen
         └──────────────┬──────────────┘
                        │
                        ▼
@@ -74,7 +78,7 @@ penyedia RPC sejenis), aplikasi tidak bisa:
 - membaca data transaksi (block number, timestamp),
 - mengirim transaksi ke jaringan Sepolia.
 
-Singkatnya: **MetaMask** = dompet & alat tanda tangan milik user;
+Singkatnya: **Wallet server** = pengirim transaksi pencatatan hash;
 **Alchemy** = saluran komunikasi backend ↔ blockchain.
 
 ---
@@ -88,7 +92,7 @@ Singkatnya: **MetaMask** = dompet & alat tanda tangan milik user;
 | Database | MongoDB Atlas (menyimpan data **dan** file PDF) |
 | Smart contract | Solidity 0.8.24, Hardhat |
 | Blockchain | Ethereum **Sepolia** testnet, terhubung lewat **Alchemy RPC** |
-| Wallet | MetaMask |
+| Wallet pencatat | ethers.js pada backend; key server khusus Sepolia |
 | Hosting (gratis) | Vercel (frontend & backend) · MongoDB Atlas · Alchemy |
 
 ---
@@ -112,7 +116,7 @@ SigChain/
 - **Login & 3 role** — Admin, Staff Akademik, Staff Administrasi (autentikasi JWT).
 - **Dashboard** — ringkasan jumlah dokumen, yang sudah/belum ditandatangani, aktivitas terbaru.
 - **Manajemen dokumen** — upload PDF, preview, download, hapus, lihat detail.
-- **Tanda tangan elektronik** — pakai MetaMask, simpan alamat wallet & waktu tanda tangan.
+- **Pengesahan dokumen** — persetujuan akun pengguna, tanda tangan visual, pencatatan otomatis oleh wallet server.
 - **Pencatatan blockchain** — hash SHA-256 disimpan on-chain beserta txHash, block number, timestamp.
 - **Verifikasi dokumen** — upload ulang dokumen → hasil **VALID / TIDAK VALID**.
 - **QR verification** — QR code menuju halaman verifikasi publik.
@@ -160,12 +164,12 @@ Ringkas (langkah detail ada di [`DEPLOYMENT.md`](DEPLOYMENT.md)):
 # 1. Smart contract — deploy ke blockchain
 cd smart_contract && npm install
 cp .env.example .env        # isi SEPOLIA_RPC_URL (dari Alchemy) + PRIVATE_KEY (wallet test)
-npm test                    # 9 test harus lulus
+npm test                    # jalankan tes smart contract
 npm run deploy:sepolia      # catat alamat kontrak; ABI otomatis ter-export
 
 # 2. Backend — API
 cd ../backend && npm install
-cp .env.example .env        # isi MONGODB_URI, SEPOLIA_RPC_URL, CONTRACT_ADDRESS, JWT_SECRET
+cp .env.example .env        # isi MONGODB_URI, SEPOLIA_RPC_URL, CONTRACT_ADDRESS, BLOCKCHAIN_PRIVATE_KEY, JWT_SECRET
 npm run seed                # buat akun demo (opsional)
 npm run dev
 
@@ -183,7 +187,7 @@ npm run dev
 | --- | --- | --- |
 | 1 | Login berhasil | Masuk ke dashboard |
 | 2 | Login gagal | Pesan "Email atau password salah" (401) |
-| 3 | Upload PDF | Dokumen tersimpan + hash SHA-256 dihitung |
+| 3 | Upload dan tanda tangan visual | PDF final tersimpan + hash SHA-256 dihitung |
 | 4 | Upload non-PDF | Ditolak (400) |
 | 5 | Tanda tangan | Status berubah → Ditandatangani |
 | 6 | Hash di blockchain | txHash + block number tercatat |

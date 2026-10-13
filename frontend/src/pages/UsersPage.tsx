@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api, apiErrorMessage } from "@/lib/api";
-import { formatDate, roleLabel, shortAddress } from "@/lib/utils";
+import { formatDate, roleLabel } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
 import type { User, UserRole } from "@/types";
 import { toast } from "sonner";
@@ -33,7 +33,7 @@ const emptyForm = {
   email: "",
   password: "",
   role: "staff_administrasi" as UserRole,
-  walletAddress: "",
+  walletAddress: "", jabatan: "", unit: "", nim: "",
 };
 
 export function UsersPage() {
@@ -70,7 +70,7 @@ export function UsersPage() {
       email: u.email,
       password: "",
       role: u.role,
-      walletAddress: u.walletAddress || "",
+      walletAddress: u.walletAddress || "", jabatan: (u.jabatan || []).join(", "), unit: u.unit || "", nim: u.nim || "",
     });
     setOpen(true);
   }
@@ -82,14 +82,14 @@ export function UsersPage() {
       if (editId) {
         const payload: Record<string, unknown> = {
           nama: form.nama,
-          role: form.role,
+          role: form.role, jabatan: form.jabatan.split(",").map(v => v.trim()).filter(Boolean), unit: form.unit, nim: form.nim,
           walletAddress: form.walletAddress || undefined,
         };
         if (form.password) payload.password = form.password;
         await api.put(`/users/${editId}`, payload);
         toast.success("User diperbarui");
       } else {
-        await api.post("/users", { ...form, walletAddress: form.walletAddress || undefined });
+        await api.post("/users", { ...form, jabatan: form.jabatan.split(",").map(v => v.trim()).filter(Boolean), walletAddress: form.walletAddress || undefined });
         toast.success("User dibuat");
       }
       setOpen(false);
@@ -144,7 +144,7 @@ export function UsersPage() {
                   <TableHead>Nama</TableHead>
                   <TableHead className="hidden md:table-cell">Email</TableHead>
                   <TableHead>Peran</TableHead>
-                  <TableHead className="hidden lg:table-cell">Wallet</TableHead>
+                  <TableHead className="hidden lg:table-cell">Jabatan / NIM</TableHead>
                   <TableHead className="hidden lg:table-cell">Dibuat</TableHead>
                   <TableHead className="text-right">Aksi</TableHead>
                 </TableRow>
@@ -162,7 +162,7 @@ export function UsersPage() {
                       </Badge>
                     </TableCell>
                     <TableCell className="hidden font-mono text-xs text-muted-foreground lg:table-cell">
-                      {u.walletAddress ? shortAddress(u.walletAddress) : "-"}
+                      {u.role === "mahasiswa" ? u.nim || "-" : (u.jabatan || []).join(", ") || "-"}
                     </TableCell>
                     <TableCell className="hidden text-sm text-muted-foreground lg:table-cell">
                       {formatDate(u.createdAt)}
@@ -234,21 +234,16 @@ export function UsersPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="mahasiswa">Mahasiswa</SelectItem>
                   <SelectItem value="admin">Admin</SelectItem>
                   <SelectItem value="staff_akademik">Akademisi (Dosen)</SelectItem>
                   <SelectItem value="staff_administrasi">Staff Administrasi</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
-              <Label>Wallet Address (opsional)</Label>
-              <Input
-                placeholder="0x…"
-                className="font-mono text-xs"
-                value={form.walletAddress}
-                onChange={(e) => setForm({ ...form, walletAddress: e.target.value })}
-              />
-            </div>
+            <div className="space-y-2"><Label>Jabatan (pisahkan dengan koma)</Label><Input placeholder="Dekan, Kaprodi" value={form.jabatan} onChange={e => setForm({ ...form, jabatan: e.target.value })} /></div>
+            <div className="space-y-2"><Label>Unit</Label><Input placeholder="FTI / Prodi" value={form.unit} onChange={e => setForm({ ...form, unit: e.target.value })} /></div>
+            {form.role === "mahasiswa" && <div className="space-y-2"><Label>NIM</Label><Input value={form.nim} onChange={e => setForm({ ...form, nim: e.target.value })} /></div>}
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                 Batal

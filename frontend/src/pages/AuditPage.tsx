@@ -12,7 +12,8 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { api } from "@/lib/api";
+import { api, apiErrorMessage } from "@/lib/api";
+import { toast } from "sonner";
 import { formatDate } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
 import type { AuditItem, User } from "@/types";
@@ -39,6 +40,7 @@ export function AuditPage() {
     api
       .get("/audit")
       .then(({ data }) => setItems(data.trails))
+      .catch(error => toast.error(apiErrorMessage(error, "Gagal memuat riwayat aktivitas")))
       .finally(() => setLoading(false));
   }, []);
 
@@ -83,6 +85,8 @@ export function AuditPage() {
                           {actor?.nama ? `${actor.nama} · ` : ""}
                           {formatDate(it.timestamp)}
                         </p>
+                        {Boolean(it.metadata?.documentId) && <p className="text-xs text-muted-foreground">Dokumen: {String(it.metadata?.documentId)}{it.metadata?.version ? ` · Versi ${it.metadata.version}` : ""}{it.metadata?.stepIndex !== undefined ? ` · Tahap ${Number(it.metadata.stepIndex) + 1}` : ""}</p>}
+                        {Boolean(it.metadata?.reason) && <p className="text-xs whitespace-pre-wrap">Alasan: {String(it.metadata?.reason)}</p>}
                       </div>
                       <Badge variant="secondary">{it.action}</Badge>
                     </div>

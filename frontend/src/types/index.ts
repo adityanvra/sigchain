@@ -1,16 +1,22 @@
-export type UserRole = "admin" | "staff_akademik" | "staff_administrasi";
+export type UserRole = "admin" | "staff_akademik" | "staff_administrasi" | "mahasiswa";
 
 export interface User {
   _id: string;
   nama: string;
   email: string;
   role: UserRole;
+  jabatan?: string[];
+  unit?: string;
+  nim?: string;
+  capacities?: string[];
   walletAddress?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }
 
-export type DocStatus = "DRAFT" | "UNSIGNED" | "PENDING_BLOCKCHAIN" | "SIGNED";
+export type DocStatus = "DRAFT" | "UNSIGNED" | "SUBMITTED" | "READY_TO_SIGN" | "PARTIALLY_SIGNED" | "PENDING_APPROVAL" | "NEEDS_REVISION" | "REJECTED" | "PENDING_BLOCKCHAIN" | "SIGNED";
+
+export interface SigningStep { signer: User | string; capacity: string; status: "WAITING" | "READY" | "APPLIED" | "APPROVED"; position?: SignaturePosition; approvedAt?: string; hash?: string; }
 
 export interface SignaturePosition {
   page: number;
@@ -33,8 +39,18 @@ export interface DocumentItem {
   blockchainTimestamp?: string | null;
   walletAddress?: string | null;
   status: DocStatus;
+  recordingMethod?: "browser_wallet" | "server_wallet" | "account_approval";
   uploader: User | string;
   assignedTo?: User | null;
+  reviewer?: User | string | null;
+  signingSteps?: SigningStep[];
+  currentStep?: number;
+  version?: number;
+  previousVersionId?: string;
+  supersededBy?: string;
+  reviewReason?: string;
+  documentType?: string;
+  hasRequestFile?: boolean;
   signaturePosition?: SignaturePosition | null;
   createdAt: string;
   updatedAt: string;
@@ -44,8 +60,13 @@ export interface SignatureItem {
   _id: string;
   documentId: string;
   signer: User | string;
-  walletAddress: string;
+  walletAddress: string | null;
   signature: string;
+  recordingMethod?: "browser_wallet" | "server_wallet" | "account_approval";
+  capacity?: string;
+  stepIndex?: number;
+  approvalMessage?: string;
+  approvedAt?: string;
   transactionHash?: string | null;
   blockNumber?: number | null;
   timestamp: string;
@@ -75,7 +96,11 @@ export interface DashboardStats {
 
 export interface VerifyResult {
   valid: boolean;
-  status: "VALID" | "TIDAK VALID";
+  status: "VALID" | "TIDAK VALID" | "TIDAK TERDAFTAR" | "BELUM SELESAI" | "GAGAL DIPERIKSA";
+  outcome?: "MATCH" | "DIFFERENT" | "NOT_REGISTERED" | "PENDING" | "NETWORK_ERROR";
+  reason?: string;
+  referenceHash?: string | null;
+  checkedFile?: boolean;
   hash: string | null;
   onChain: {
     exists: boolean;
@@ -87,11 +112,15 @@ export interface VerifyResult {
   document: {
     id: string;
     namaDokumen: string;
+    version?: number;
+    supersededBy?: string;
+    previousVersionId?: string;
     status: DocStatus;
     transactionHash?: string | null;
     blockNumber?: number | null;
     blockchainTimestamp?: string | null;
     walletAddress?: string | null;
+    recordingMethod?: "browser_wallet" | "server_wallet" | "account_approval";
     uploader?: User;
     assignedTo?: User | null;
     signaturePosition?: SignaturePosition | null;

@@ -32,7 +32,7 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
 
   // Multer upload errors (size limit, file filter, etc.)
   const multerLike = err as { name?: string; message?: string };
-  if (multerLike?.name === "MulterError" || multerLike?.message === "Only PDF files are allowed") {
+  if (multerLike?.name === "MulterError" || multerLike?.message === "Only PDF files are allowed" || multerLike?.message === "Only PNG/JPEG image files are allowed for signatures") {
     return res.status(400).json({ success: false, message: multerLike.message || "Upload error" });
   }
 
@@ -40,6 +40,9 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
   const anyErr = err as { code?: number; name?: string; message?: string };
   if (anyErr?.code === 11000) {
     return res.status(409).json({ success: false, message: "Duplicate value", details: anyErr });
+  }
+  if (anyErr?.name === "CastError") {
+    return res.status(400).json({ success: false, message: "Format ID atau parameter tidak valid" });
   }
   if (anyErr?.name === "ValidationError") {
     return res.status(400).json({ success: false, message: anyErr.message });

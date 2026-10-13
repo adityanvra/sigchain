@@ -3,6 +3,7 @@ import { AcademicSignature } from "../models/AcademicSignature";
 import { ApiError } from "../utils/ApiError";
 import { asyncHandler } from "../utils/asyncHandler";
 import { recordAudit } from "../services/auditService";
+import { PDFDocument } from "pdf-lib";
 
 /** GET /academic-signatures/my — returns the active signature for the current user (no image data) */
 export const getMySignature = asyncHandler(async (req: Request, res: Response) => {
@@ -63,6 +64,14 @@ export const getSignatureImage = asyncHandler(async (req: Request, res: Response
 /** POST /academic-signatures — upload new signature image (replaces existing active) */
 export const uploadSignature = asyncHandler(async (req: Request, res: Response) => {
   if (!req.file) throw ApiError.badRequest("Gambar tanda tangan wajib diunggah");
+  try {
+    const probe = await PDFDocument.create();
+    const bytes = Uint8Array.from(req.file.buffer);
+    if (req.file.mimetype === "image/png") await probe.embedPng(bytes);
+    else await probe.embedJpg(bytes);
+  } catch {
+    throw ApiError.badRequest("Gambar tanda tangan tidak dapat dibaca. Gunakan PNG atau JPEG yang valid.");
+  }
 
   // Deactivate any existing active signature for this user
   await AcademicSignature.updateMany(

@@ -10,7 +10,10 @@ export const createUserSchema = z.object({
   nama: z.string().min(2).max(120),
   email: z.string().email(),
   password: z.string().min(6).max(128),
-  role: z.enum(["admin", "staff_akademik", "staff_administrasi"]),
+  role: z.enum(["admin", "staff_akademik", "staff_administrasi", "mahasiswa"]),
+  jabatan: z.array(z.string().trim().min(2).max(120)).max(12).optional(),
+  unit: z.string().trim().max(120).optional(),
+  nim: z.string().trim().max(30).optional(),
   walletAddress: z
     .string()
     .refine((v) => !v || ethers.isAddress(v), "Invalid wallet address")
@@ -19,8 +22,11 @@ export const createUserSchema = z.object({
 
 export const updateUserSchema = z.object({
   nama: z.string().min(2).max(120).optional(),
-  role: z.enum(["admin", "staff_akademik", "staff_administrasi"]).optional(),
+  role: z.enum(["admin", "staff_akademik", "staff_administrasi", "mahasiswa"]).optional(),
   password: z.string().min(6).max(128).optional(),
+  jabatan: z.array(z.string().trim().min(2).max(120)).max(12).optional(),
+  unit: z.string().trim().max(120).optional(),
+  nim: z.string().trim().max(30).optional(),
   walletAddress: z
     .string()
     .refine((v) => !v || ethers.isAddress(v), "Invalid wallet address")
@@ -34,7 +40,7 @@ export const listUsers = asyncHandler(async (_req: Request, res: Response) => {
 
 export const listAkademisi = asyncHandler(async (_req: Request, res: Response) => {
   const users = await User.find({ role: "staff_akademik" })
-    .select("_id nama email role walletAddress")
+    .select("_id nama email role jabatan unit")
     .sort({ nama: 1 });
   res.json({ success: true, akademisi: users });
 });
@@ -65,6 +71,9 @@ export const updateUser = asyncHandler(async (req: Request, res: Response) => {
   const user = await User.findById(req.params.id).select("+password");
   if (!user) throw ApiError.notFound("User tidak ditemukan");
 
+  if (data.jabatan !== undefined) user.jabatan = data.jabatan;
+  if (data.unit !== undefined) user.unit = data.unit;
+  if (data.nim !== undefined) user.nim = data.nim;
   if (data.nama !== undefined) user.nama = data.nama;
   if (data.role !== undefined) user.role = data.role;
   if (data.password !== undefined) user.password = data.password;

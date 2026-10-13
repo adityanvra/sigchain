@@ -1,18 +1,11 @@
 import { Request, Response } from "express";
 import { DocumentModel } from "../models/Document";
 import { AuditTrail } from "../models/AuditTrail";
+import { documentScope } from "../services/documentAccess";
 import { asyncHandler } from "../utils/asyncHandler";
 
 export const dashboardStats = asyncHandler(async (req: Request, res: Response) => {
-  let scope: Record<string, unknown> = {};
-  if (req.user!.role === "staff_akademik") {
-    scope = {
-      $or: [{ uploader: req.user!.sub }, { assignedTo: req.user!.sub }],
-    };
-  } else if (req.user!.role === "staff_administrasi") {
-    scope = { uploader: req.user!.sub };
-  }
-
+  const scope = documentScope(req);
   // Count all documents in scope that are "unsigned" = DRAFT + UNSIGNED + PENDING_BLOCKCHAIN
   const [total, signed, pendingBlockchain, draft, recentDocs] = await Promise.all([
     DocumentModel.countDocuments(scope),
@@ -26,7 +19,7 @@ export const dashboardStats = asyncHandler(async (req: Request, res: Response) =
       .limit(5),
   ]);
 
-  const unsigned = draft + pendingBlockchain; // backwards-compat stat label
+  const unsigned = total - signed; // backwards-compat stat label
 
   const auditScope = req.user!.role === "admin" ? {} : { userId: req.user!.sub };
   const recentActivity = await AuditTrail.find(auditScope)

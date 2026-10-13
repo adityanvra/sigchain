@@ -1,24 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, Wallet, Save, Link2, PenLine, UploadCloud, Trash2, ImageIcon } from "lucide-react";
+import { Loader2, Save, PenLine, UploadCloud, Trash2, ImageIcon } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { api, apiErrorMessage } from "@/lib/api";
+import { api, apiErrorMessage, getToken } from "@/lib/api";
 import { config } from "@/lib/config";
 import { useAuth } from "@/context/AuthContext";
-import { useWallet } from "@/hooks/useWallet";
-import { roleLabel, shortAddress } from "@/lib/utils";
+import { roleLabel } from "@/lib/utils";
 import type { AcademicSignature } from "@/types";
 import { toast } from "sonner";
 
 export function ProfilePage() {
   const { user, setUser } = useAuth();
-  const { connect, connecting } = useWallet();
   const [nama, setNama] = useState(user?.nama || "");
-  const [walletAddress, setWalletAddress] = useState(user?.walletAddress || "");
   const [saving, setSaving] = useState(false);
 
   // Signature state
@@ -29,7 +26,7 @@ export function ProfilePage() {
   const [sigPreviewUrl, setSigPreviewUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const isAkademisi = user?.role === "staff_akademik" || user?.role === "admin";
+  const isAkademisi = user?.role !== "mahasiswa";
 
   const initials = (user?.nama || "U")
     .split(" ")
@@ -52,7 +49,6 @@ export function ProfilePage() {
       if (data.signature) {
         // Fetch image dengan Authorization header lalu buat blob URL
         // (elemen <img src="..."> tidak bisa mengirim header auth secara langsung)
-        const { getToken } = await import("@/lib/api");
         const token = getToken();
         const res = await fetch(`${config.apiUrl}/academic-signatures/my/image`, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -80,7 +76,6 @@ export function ProfilePage() {
     try {
       const { data } = await api.put("/auth/profile", {
         nama,
-        walletAddress: walletAddress || undefined,
       });
       setUser(data.user);
       toast.success("Profil diperbarui");
@@ -88,16 +83,6 @@ export function ProfilePage() {
       toast.error(apiErrorMessage(err, "Gagal memperbarui profil"));
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function linkWallet() {
-    try {
-      const addr = await connect();
-      setWalletAddress(addr);
-      toast.success("Wallet terhubung — jangan lupa simpan.");
-    } catch (err) {
-      toast.error(apiErrorMessage(err, "Gagal menghubungkan wallet"));
     }
   }
 
@@ -171,27 +156,9 @@ export function ProfilePage() {
               <Label>Email</Label>
               <Input value={user?.email} disabled />
             </div>
-            <div className="space-y-2">
-              <Label className="flex items-center gap-2">
-                <Wallet className="h-4 w-4" /> Wallet Address (MetaMask)
-              </Label>
-              <div className="flex gap-2">
-                <Input
-                  placeholder="0x…"
-                  className="font-mono text-xs"
-                  value={walletAddress}
-                  onChange={(e) => setWalletAddress(e.target.value)}
-                />
-                <Button type="button" variant="outline" onClick={linkWallet} disabled={connecting}>
-                  {connecting ? <Loader2 className="animate-spin" /> : <Link2 />} Hubungkan
-                </Button>
-              </div>
-              {walletAddress && (
-                <p className="text-xs text-muted-foreground">
-                  Tersimpan: <span className="font-mono">{shortAddress(walletAddress)}</span>
-                </p>
-              )}
-            </div>
+            <p className="text-sm text-muted-foreground">
+              Persetujuan dokumen dicatat atas akun Anda. Pencatatan blockchain diproses otomatis oleh server.
+            </p>
             <div className="flex justify-end">
               <Button type="submit" disabled={saving}>
                 {saving ? <Loader2 className="animate-spin" /> : <Save />} Simpan Perubahan
@@ -292,7 +259,7 @@ export function ProfilePage() {
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/png,image/jpeg,image/webp"
+              accept="image/png,image/jpeg"
               className="hidden"
               onChange={handleSignatureUpload}
             />

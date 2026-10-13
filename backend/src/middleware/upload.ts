@@ -1,6 +1,23 @@
 import multer from "multer";
 import path from "path";
 import { env } from "../config/env";
+import { PDFDocument } from "pdf-lib";
+import { asyncHandler } from "../utils/asyncHandler";
+import { ApiError } from "../utils/ApiError";
+
+/** Validate every file before an upload batch or revision changes any records. */
+export const validateUploadedPdfs = asyncHandler(async (req, _res, next) => {
+  const files = req.file ? [req.file] : Array.isArray(req.files) ? req.files : [];
+  for (const file of files) {
+    try {
+      const pdf = await PDFDocument.load(file.buffer);
+      if (!pdf.getPageCount()) throw new Error("empty PDF");
+    } catch {
+      throw ApiError.badRequest("PDF tidak dapat dibaca atau dilindungi kata sandi. Unggah PDF yang valid tanpa enkripsi.");
+    }
+  }
+  next();
+});
 
 const pdfFilter: multer.Options["fileFilter"] = (_req, file, cb) => {
   const isPdfMime = file.mimetype === "application/pdf";
@@ -10,8 +27,8 @@ const pdfFilter: multer.Options["fileFilter"] = (_req, file, cb) => {
 };
 
 const imageFilter: multer.Options["fileFilter"] = (_req, file, cb) => {
-  const allowed = ["image/png", "image/jpeg", "image/jpg", "image/webp"];
-  const allowedExt = [".png", ".jpg", ".jpeg", ".webp"];
+  const allowed = ["image/png", "image/jpeg", "image/jpg"];
+  const allowedExt = [".png", ".jpg", ".jpeg"];
   const isMime = allowed.includes(file.mimetype);
   const isExt = allowedExt.includes(path.extname(file.originalname).toLowerCase());
   if (isMime && isExt) return cb(null, true);

@@ -27,8 +27,9 @@ MONGODB_URI=mongodb+srv://USER:PASSWORD@cluster0.xxxxx.mongodb.net/sigchain?retr
 | `nama` | String | Nama lengkap |
 | `email` | String | Unik, lowercase, terindeks |
 | `password` | String | Hash bcrypt (cost 12), `select:false` |
-| `role` | String | `admin` \| `staff_akademik` \| `staff_administrasi` |
-| `walletAddress` | String\|null | Alamat wallet MetaMask (lowercase) |
+| `role` | String | `admin` \| `staff_akademik` \| `staff_administrasi` \| `mahasiswa` |
+| `jabatan` / `unit` / `nim` | Array / String / String | Kapasitas jabatan per orang, unit dan NIM mahasiswa |
+| `walletAddress` | String\|null | Alamat wallet lama (opsional; tidak dibutuhkan untuk persetujuan akun) |
 | `createdAt` / `updatedAt` | Date | Timestamps |
 
 Indeks: `email` (unique).
@@ -49,7 +50,10 @@ Indeks: `email` (unique).
 | `blockNumber` | Number\|null | Nomor block |
 | `blockchainTimestamp` | Date\|null | Timestamp block |
 | `uploader` | ObjectId → `users` | Pengunggah |
-| `status` | String | `UNSIGNED` \| `SIGNED` |
+| `status` | String | DRAFT, UNSIGNED, SUBMITTED, READY_TO_SIGN, PARTIALLY_SIGNED, PENDING_APPROVAL, NEEDS_REVISION, REJECTED, PENDING_BLOCKCHAIN, SIGNED |
+| `reviewer` / `signingSteps` / `currentStep` | ObjectId / Array / Number | Pemeriksa TU, tahap personal dan giliran aktif |
+| `version` / `previousVersionId` / `supersededBy` | Number / ObjectId / ObjectId | Versi dokumen dan hubungan penerus; final lama tetap disimpan |
+| `fileData` / `signedFileData` / `requestFileData` | Buffer | PDF awal, PDF bertanda tangan dan permohonan awal sebelum surat keluaran TU; tidak dikirim dalam JSON |
 | `createdAt` / `updatedAt` | Date | Timestamps |
 
 Indeks: `hashDokumen`, `uploader`, `status`.
@@ -61,8 +65,9 @@ Indeks: `hashDokumen`, `uploader`, `status`.
 | `_id` | ObjectId | Primary key |
 | `documentId` | ObjectId → `documents` | Dokumen yang ditandatangani |
 | `signer` | ObjectId → `users` | Penandatangan |
-| `walletAddress` | String | Alamat wallet penandatangan |
-| `signature` | String | Hasil `personal_sign` MetaMask |
+| `walletAddress` | String atau null | Wallet server pencatat akhir; null untuk persetujuan tahap perantara |
+| `recordingMethod` / `capacity` / `stepIndex` | String / String / Number | account_approval, server_wallet atau browser_wallet lama; kapasitas dan nomor tahap |
+| `signature` | String | Signature wallet server atas pesan persetujuan; data lama bisa berisi signature wallet browser |
 | `transactionHash` | String\|null | Tx hash on-chain |
 | `blockNumber` | Number\|null | Nomor block |
 | `timestamp` | Date | Waktu penandatanganan |
@@ -83,6 +88,8 @@ Indeks: `documentId`, `signer`.
 
 ## Seeding
 
+Koleksi `notifications` menyimpan user penerima, documentId, pesan, readAt dan emailStatus (disabled/pending/sent/failed). Akses hanya untuk penerima. Audit mencakup WORKFLOW, SUBMIT, REVIEW dan REVISION beserta metadata versi, tahap dan alasan.
+
 Akun demo (satu per role) dapat dibuat dengan:
 
 ```bash
@@ -97,6 +104,7 @@ Akun yang dibuat (password semua: `password123`):
 | `admin@uad.ac.id` | admin |
 | `akademik@uad.ac.id` | staff_akademik |
 | `administrasi@uad.ac.id` | staff_administrasi |
+| `mahasiswa@uad.ac.id` | mahasiswa |
 
 Atau gunakan `database/seed.mongodb.js` di **MongoDB Shell (mongosh)** /
 **MongoDB Compass** bila ingin men-seed langsung ke Atlas tanpa menjalankan
@@ -109,3 +117,5 @@ users 1───∞ documents 1───∞ signatures
   │                              
   └───────────∞ audittrails       
 ```
+
+Record baru menambahkan `recordingMethod=server_wallet`, `approvalMessage`, dan `approvedAt` pada Signature. `signer` tetap ID akun pemberi persetujuan. Document menyimpan `approvalUserId`, `approvalAt`, dan lease sementara `blockchainLockUntil` untuk mencegah pengiriman ganda.

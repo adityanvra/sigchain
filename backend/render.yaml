@@ -20,6 +20,8 @@ services:
         sync: false
       - key: SEPOLIA_RPC_URL
         sync: false
+      - key: BLOCKCHAIN_PRIVATE_KEY
+        sync: false
       - key: CHAIN_ID
         value: "11155111"
       - key: CONTRACT_ADDRESS

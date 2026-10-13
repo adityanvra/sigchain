@@ -1,5 +1,7 @@
 # SIGCHAIN-UAD — Panduan Deployment (Free Tier)
 
+Alur tanda tangan sekarang memakai wallet backend, tanpa MetaMask di browser. Untuk penggunaan backend lokal dengan bukti Sepolia Etherscan, ikuti [SERVER-SEPOLIA.md](SERVER-SEPOLIA.md).
+
 Deploy SIGCHAIN-UAD sepenuhnya **gratis**: Vercel (frontend) + Render (backend) +
 MongoDB Atlas (database) + Alchemy (RPC) + Sepolia (testnet). Estimasi ~30 menit.
 
@@ -13,8 +15,7 @@ MongoDB Atlas (database) + Alchemy (RPC) + Sepolia (testnet). Estimasi ~30 menit
 
 ## 1. Persiapan akun & wallet
 
-1. **MetaMask** — pasang dari <https://metamask.io>. Buat **dompet test khusus**
-   (jangan pakai dompet utama).
+1. Siapkan **wallet pencatat khusus Sepolia** dan simpan private key pada backend. MetaMask dapat digunakan untuk pengelolaan wallet oleh pengelola, tetapi tidak diperlukan pengguna aplikasi.
 2. **Sepolia ETH** — klaim di <https://sepoliafaucet.com> (cukup 0.01 ETH).
 3. **Alchemy** — <https://alchemy.com> → buat App: Network *Ethereum*, Chain
    *Sepolia*. Salin **HTTPS URL** (`https://eth-sepolia.g.alchemy.com/v2/<KEY>`).
@@ -72,6 +73,7 @@ Catat **alamat kontrak**. Script otomatis meng-export ABI ke
    CHAIN_ID          = 11155111
    CONTRACT_ADDRESS  = 0xABC...123                ← dari langkah 2
    BLOCK_EXPLORER    = https://sepolia.etherscan.io
+   BLOCKCHAIN_PRIVATE_KEY = <private key wallet pencatat khusus Sepolia, server saja>
    MAX_UPLOAD_MB     = 20
    PUBLIC_VERIFY_URL = https://<frontend>.vercel.app/verify
    ```
@@ -107,9 +109,9 @@ Catat **alamat kontrak**. Script otomatis meng-export ABI ke
 ## 5. Uji end-to-end
 
 1. Buka frontend, login (akun admin/akademik).
-2. **Connect MetaMask** (di Profil) → switch ke Sepolia.
-3. **Upload** PDF → hash SHA-256 muncul.
-4. **Tandatangani** → MetaMask konfirmasi tx `storeDocumentHash` → tunggu ~15 dtk.
+2. Pastikan wallet backend dikonfigurasi dan mempunyai saldo test ETH.
+3. **Upload** PDF → buka editor dan pilih posisi tanda tangan.
+4. **Tandatangani dan Sahkan** → backend menghitung hash PDF final dan mencatatnya ke Sepolia. Tunggu konfirmasi, lalu buka bukti Etherscan pada detail dokumen.
 5. **Verifikasi** PDF sama → **VALID**; ubah 1 byte → **TIDAK VALID**.
 6. Pindai **QR** → halaman verifikasi publik.
 
@@ -119,7 +121,7 @@ Catat **alamat kontrak**. Script otomatis meng-export ABI ke
 | --- | --- |
 | `/api/health` `blockchain.mock=true` padahal produksi | `SEPOLIA_RPC_URL` atau `CONTRACT_ADDRESS` belum di-set di Render |
 | CORS error di browser | Tambahkan URL Vercel ke `CORS_ORIGINS`, redeploy backend |
-| MetaMask *insufficient funds for gas* | Klaim Sepolia ETH lagi di faucet |
+| Wallet server kekurangan gas / key belum diisi | Isi `BLOCKCHAIN_PRIVATE_KEY` pada backend dan danai alamat wallet pencatat dengan Sepolia test ETH |
 | Request Render lambat 30 dtk | Free tier sleep — wajar, ada loading state |
 | `MongoServerError: bad auth` | Periksa user/password & Network Access (0.0.0.0/0) di Atlas |
 | Upload hilang setelah redeploy | Disk Render ephemeral — gunakan object storage untuk produksi |

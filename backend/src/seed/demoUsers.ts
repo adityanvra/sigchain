@@ -1,6 +1,7 @@
 import { User } from "../models/User";
 
 export const demoUsers = [
+  { nama: "Mahasiswa UAD", email: "mahasiswa@uad.ac.id", password: "password123", role: "mahasiswa" as const },
   {
     nama: "Administrator UAD",
     email: "admin@uad.ac.id",

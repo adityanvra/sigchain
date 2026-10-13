@@ -27,6 +27,8 @@ import { formatBytes } from "@/lib/utils";
 import type { User } from "@/types";
 import { toast } from "sonner";
 
+import { useAuth } from "@/context/AuthContext";
+
 interface FileEntry {
   id: string;
   file: File;
@@ -37,6 +39,8 @@ interface FileEntry {
 
 export function UploadPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isStudent = user?.role === "mahasiswa";
   const [fileEntries, setFileEntries] = useState<FileEntry[]>([]);
   const [akademisiList, setAkademisiList] = useState<User[]>([]);
   const [globalAssignee, setGlobalAssignee] = useState<string>("unassigned");
@@ -124,7 +128,7 @@ export function UploadPage() {
         form.append("file", entry.file);
         form.append("namaDokumen", entry.namaDokumen);
         form.append("description", entry.description);
-        if (entry.assignedTo && entry.assignedTo !== "unassigned") {
+        if (!isStudent && entry.assignedTo && entry.assignedTo !== "unassigned") {
           form.append("assignedTo", entry.assignedTo);
         }
 
@@ -141,7 +145,7 @@ export function UploadPage() {
           assignments[String(idx)] = {
             namaDokumen: entry.namaDokumen,
             description: entry.description,
-            assignedTo: entry.assignedTo !== "unassigned" ? entry.assignedTo : undefined,
+            assignedTo: !isStudent && entry.assignedTo !== "unassigned" ? entry.assignedTo : undefined,
           };
         });
 
@@ -164,7 +168,7 @@ export function UploadPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Upload Draft Dokumen</h1>
           <p className="text-sm text-muted-foreground">
-            Unggah satu atau banyak berkas draft PDF (Bulk Upload) dan tentukan Akademisi penandatangan.
+            Unggah PDF permohonan atau dokumen akademik. Setelah diunggah, buka detail untuk mengatur pemeriksa TU dan urutan penandatangan.
           </p>
         </div>
         {fileEntries.length > 0 && (
@@ -234,7 +238,7 @@ export function UploadPage() {
                   Tugaskan Semua Berkas ke:
                 </Label>
                 <div className="min-w-[280px] flex-1">
-                  <Select
+                  <Select disabled={isStudent}
                     value={globalAssignee}
                     onValueChange={(val) => applyGlobalAssignee(val)}
                   >
@@ -323,7 +327,7 @@ export function UploadPage() {
 
                       <div className="space-y-1.5">
                         <Label className="text-xs font-medium">Ditugaskan Kepada</Label>
-                        <Select
+                        <Select disabled={isStudent}
                           value={entry.assignedTo}
                           onValueChange={(val) => updateEntry(entry.id, { assignedTo: val })}
                         >

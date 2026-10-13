@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/dialog";
 import { api, apiErrorMessage, getToken } from "@/lib/api";
 import { config } from "@/lib/config";
-import { connectWallet, ensureChain, hasMetaMask, signHashMessage, storeHashOnChain } from "@/lib/wallet";
+import { recordDocumentOnServer } from "@/lib/signing";
 import type { AcademicSignature, DocumentItem } from "@/types";
 import { toast } from "sonner";
 
@@ -49,7 +49,6 @@ interface SigPlacement {
   height: number;
 }
 
-const DEMO_WALLET = "0x1111111111111111111111111111111111111111";
 
 export function SignatureEditorPage() {
   const { id } = useParams<{ id: string }>();
@@ -99,7 +98,10 @@ export function SignatureEditorPage() {
       try {
         const { data } = await api.get(`/documents/${id}`);
         setDoc(data.document);
-        if (data.document.status === "PENDING_BLOCKCHAIN" && data.document.hashDokumen) {
+        if ((data.document.currentStep || 0) > 0) {
+          setPlacement(p => ({ ...p, y: Math.max(0, 600 - data.document.currentStep * 80) }));
+        }
+        if (["PENDING_BLOCKCHAIN", "PENDING_APPROVAL"].includes(data.document.status) && data.document.hashDokumen) {
           setResultHash(data.document.hashDokumen);
         }
       } catch (err) {
@@ -162,7 +164,7 @@ export function SignatureEditorPage() {
 
     async function loadPdf() {
       const pdfjs = await getPdfjs();
-      const url = `${config.apiUrl}/documents/${id}/file?type=draft`;
+      const url = `${config.apiUrl}/documents/${id}/file${(doc?.currentStep || 0) > 0 || resultHash ? "" : "?type=draft"}`;
       const token = getToken();
 
       try {
@@ -172,6 +174,10 @@ export function SignatureEditorPage() {
         });
         const pdf = await loadingTask.promise;
         if (cancelled) return;
+        const firstPage = await pdf.getPage(1);
+        const firstSize = firstPage.getViewport({ scale: 1 });
+        const availableWidth = window.innerWidth - (window.innerWidth >= 1024 ? 400 : 40);
+        setScale(Math.min(1.2, Math.max(0.4, availableWidth / firstSize.width)));
         setPdfDoc(pdf);
         setTotalPages(pdf.numPages);
       } catch (err) {
@@ -208,13 +214,13 @@ export function SignatureEditorPage() {
   useEffect(() => { renderPage(); }, [renderPage]);
 
   // ─── Drag handlers (converting screen delta -> native PDF points) ─────────
-  function onSigMouseDown(e: React.MouseEvent) {
+  function onSigMouseDown(e: React.PointerEvent) {
     e.preventDefault();
     setDragging(true);
     dragStart.current = { mx: e.clientX, my: e.clientY, ox: placement.x, oy: placement.y };
   }
 
-  function onResizeMouseDown(e: React.MouseEvent) {
+  function onResizeMouseDown(e: React.PointerEvent) {
     e.preventDefault();
     e.stopPropagation();
     setResizing(true);
@@ -222,7 +228,7 @@ export function SignatureEditorPage() {
   }
 
   useEffect(() => {
-    function onMove(e: MouseEvent) {
+    function onMove(e: PointerEvent) {
       if (dragging) {
         const dx = (e.clientX - dragStart.current.mx) / scale;
         const dy = (e.clientY - dragStart.current.my) / scale;
@@ -243,9 +249,10 @@ export function SignatureEditorPage() {
       }
     }
     function onUp() { setDragging(false); setResizing(false); }
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    return () => { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); window.removeEventListener("pointercancel", onUp); };
   }, [dragging, resizing, scale, pageSize]);
 
   // ─── Apply signature ───────────────────────────────────────────────────────
@@ -266,7 +273,7 @@ export function SignatureEditorPage() {
       });
       setResultHash(data.hash);
       setDoc(data.document);
-      toast.success("Tanda tangan berhasil diterapkan! PDF final sudah dibuat.");
+      await handleSign();
     } catch (err) {
       toast.error(apiErrorMessage(err, "Gagal menerapkan tanda tangan"));
     } finally {
@@ -278,46 +285,13 @@ export function SignatureEditorPage() {
 
   // ─── Blockchain confirmation ───────────────────────────────────────────────
   async function handleSign() {
-    if (!resultHash) return;
+    if (!id) return;
     setSigning(true);
     setSignOpen(true);
     try {
-      setSignStep("Menyiapkan data tanda tangan…");
-      const { data: prep } = await api.post(`/documents/${id}/sign/prepare`);
-      const hash: string = prep.hash;
-      const mock: boolean = prep.mock;
-
-      let walletAddress = DEMO_WALLET;
-      let signature = `demo-signature-${Date.now()}`;
-
-      if (hasMetaMask()) {
-        setSignStep("Menghubungkan MetaMask…");
-        walletAddress = await connectWallet();
-        if (!mock) {
-          setSignStep("Memastikan jaringan Sepolia…");
-          await ensureChain();
-        }
-        setSignStep("Menandatangani hash dengan wallet…");
-        const signed = await signHashMessage(hash);
-        walletAddress = signed.address;
-        signature = signed.signature;
-      } else if (!mock) {
-        throw new Error("MetaMask tidak terdeteksi. Pasang MetaMask untuk menandatangani di blockchain.");
-      } else {
-        setSignStep("Mode demo tanpa MetaMask — menggunakan wallet simulasi…");
-      }
-
-      const payload: Record<string, unknown> = { walletAddress, signature };
-
-      if (!mock) {
-        setSignStep("Mengirim transaksi ke blockchain (konfirmasi di MetaMask)…");
-        const txHash = await storeHashOnChain(hash, walletAddress);
-        payload.transactionHash = txHash;
-      }
-
-      setSignStep("Mencatat tanda tangan & menunggu konfirmasi…");
-      await api.post(`/documents/${id}/sign/confirm`, payload);
-      toast.success("Dokumen berhasil ditandatangani & dicatat di blockchain! 🎉");
+      setSignStep("Mengesahkan dokumen dan menunggu pencatatan server…");
+      const result = await recordDocumentOnServer(id!);
+      toast.success(result.intermediate ? "Persetujuan tersimpan; giliran penandatangan berikutnya." : result.mock ? "Pengesahan selesai dalam mode demo." : "Dokumen disahkan dan tercatat di Sepolia.");
       setSignOpen(false);
       navigate(`/documents/${id}`);
     } catch (err) {
@@ -344,7 +318,7 @@ export function SignatureEditorPage() {
   return (
     <div className="flex flex-col h-[calc(100vh-80px)]">
       {/* Header bar */}
-      <div className="flex items-center justify-between border-b bg-background/80 backdrop-blur px-4 py-3">
+      <div className="flex flex-wrap gap-3 items-center justify-between border-b bg-background/80 backdrop-blur px-4 py-3">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" asChild>
             <Link to={`/documents/${id}`}><ArrowLeft /></Link>
@@ -358,12 +332,12 @@ export function SignatureEditorPage() {
           {resultHash ? (
             <Button onClick={handleSign} disabled={signing} className="gap-2">
               {signing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wallet className="h-4 w-4" />}
-              Catat ke Blockchain
+              Sahkan Dokumen
             </Button>
           ) : (
             <Button
               onClick={handleApply}
-              disabled={applying || !signature || isAlreadySigned}
+              disabled={applying || !signature || isAlreadySigned || !pdfDoc || renderingPdf}
               className="gap-2"
             >
               {applying ? (
@@ -371,7 +345,7 @@ export function SignatureEditorPage() {
               ) : (
                 <PenLine className="h-4 w-4" />
               )}
-              {applying ? "Menerapkan…" : "Terapkan Tanda Tangan"}
+              {applying ? "Menerapkan…" : "Tandatangani dan Sahkan"}
             </Button>
           )}
         </div>
@@ -442,12 +416,13 @@ export function SignatureEditorPage() {
                     dragging ? "opacity-90 shadow-lg" : "opacity-80 hover:opacity-100"
                   }`}
                   style={{
+                    touchAction: "none",
                     left: placement.x * scale,
                     top: placement.y * scale,
                     width: placement.width * scale,
                     height: placement.height * scale,
                   }}
-                  onMouseDown={onSigMouseDown}
+                  onPointerDown={onSigMouseDown}
                 >
                   <img
                     src={sigImgUrl}
@@ -458,7 +433,7 @@ export function SignatureEditorPage() {
                   {/* Resize handle */}
                   <div
                     className="absolute bottom-0 right-0 h-4 w-4 cursor-se-resize bg-primary/60 rounded-tl-sm"
-                    onMouseDown={onResizeMouseDown}
+                    onPointerDown={onResizeMouseDown}
                   />
                   {/* Position label */}
                   <div className="absolute -top-5 left-0 text-[9px] font-mono bg-primary text-primary-foreground px-1 rounded whitespace-nowrap">
@@ -476,7 +451,7 @@ export function SignatureEditorPage() {
                     <p className="text-xs text-muted-foreground mt-1">SHA-256: {resultHash.slice(0, 20)}…</p>
                     <Button onClick={handleSign} disabled={signing} className="mt-3 gap-2" size="sm">
                       <Wallet className="h-3.5 w-3.5" />
-                      Catat ke Blockchain
+                      Sahkan Dokumen
                     </Button>
                   </div>
                 </div>
@@ -566,7 +541,7 @@ export function SignatureEditorPage() {
                   className="w-full gap-1.5"
                 >
                   {signing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wallet className="h-3 w-3" />}
-                  Catat ke Blockchain
+                  Sahkan Dokumen
                 </Button>
               </CardContent>
             </Card>
@@ -576,8 +551,8 @@ export function SignatureEditorPage() {
             <p className="font-medium">Alur:</p>
             <ol className="space-y-0.5 pl-3 list-decimal">
               <li className={resultHash ? "text-muted-foreground line-through" : "text-foreground"}>Atur posisi tanda tangan</li>
-              <li className={resultHash ? "text-foreground" : "text-muted-foreground"}>Klik "Terapkan"</li>
-              <li className="text-muted-foreground">Konfirmasi MetaMask</li>
+              <li className={resultHash ? "text-foreground" : "text-muted-foreground"}>Klik "Tandatangani dan Sahkan"</li>
+              <li className="text-muted-foreground">Pencatatan oleh server</li>
               <li className="text-muted-foreground">Dokumen tercatat di blockchain</li>
             </ol>
           </div>
@@ -588,7 +563,7 @@ export function SignatureEditorPage() {
       <Dialog open={signOpen} onOpenChange={(o) => !signing && setSignOpen(o)}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Konfirmasi Blockchain</DialogTitle>
+            <DialogTitle>Pengesahan Dokumen</DialogTitle>
             <DialogDescription>Jangan tutup jendela ini selama proses berlangsung.</DialogDescription>
           </DialogHeader>
           <div className="flex items-center gap-3 py-2">

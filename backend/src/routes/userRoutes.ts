@@ -11,10 +11,12 @@ import {
 import { authenticate, authorize } from "../middleware/auth";
 import { validateBody } from "../middleware/validate";
 
+import { participantDirectory } from "../controllers/workflowController";
 const router = Router();
 
 // Accessible to any authenticated user for assigning documents
 router.get("/akademisi", authenticate, listAkademisi);
+router.get("/participants", authenticate, participantDirectory);
 
 // Admin-only management endpoints
 router.use(authenticate, authorize("admin"));

@@ -24,3 +24,7 @@ smart_contract/deployments/
 Thumbs.db
 .vscode/
 .idea/
+
+# Local research sources, extracted thesis pages, and generated evidence
+/tmp/
+/output/

@@ -43,11 +43,13 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { CopyButton } from "@/components/CopyButton";
 import { api, apiErrorMessage, getToken } from "@/lib/api";
 import { config } from "@/lib/config";
-import { connectWallet, ensureChain, hasMetaMask, signHashMessage, storeHashOnChain } from "@/lib/wallet";
+import { recordDocumentOnServer } from "@/lib/signing";
 import { formatBytes, formatDate, roleLabel, shortAddress } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
 import type { DocumentItem, SignatureItem, User } from "@/types";
 import { toast } from "sonner";
+
+import { DocumentWorkflow } from "@/components/DocumentWorkflow";
 
 interface DetailResponse {
   document: DocumentItem;
@@ -55,9 +57,9 @@ interface DetailResponse {
   qrCode: string | null;
   verifyUrl: string;
   explorer: string | null;
+  mock: boolean;
 }
 
-const DEMO_WALLET = "0x1111111111111111111111111111111111111111";
 
 export function DocumentDetailPage() {
   const { id } = useParams();
@@ -115,30 +117,15 @@ export function DocumentDetailPage() {
     : data?.verifyUrl || "";
 
 
-  // Can this user open the signature editor?
-  let canSign = false;
-  if (user && doc && (doc.status === "DRAFT" || doc.status === "UNSIGNED" || doc.status === "PENDING_BLOCKCHAIN")) {
-    if (user.role === "admin") {
-      canSign = true;
-    } else if (user.role === "staff_akademik") {
-      const assigneeId = typeof doc.assignedTo === "object" ? doc.assignedTo?._id : doc.assignedTo;
-      if (assigneeId) {
-        canSign = assigneeId === user._id;
-      } else {
-        const uploaderId = typeof doc.uploader === "object" ? doc.uploader?._id : doc.uploader;
-        canSign = uploaderId === user._id;
-      }
-    }
-  }
-
-  const isPendingBlockchain = doc?.status === "PENDING_BLOCKCHAIN";
-
-  const canAssign =
-    user &&
-    doc?.status !== "SIGNED" &&
-    (user.role === "admin" ||
-      user.role === "staff_administrasi" ||
-      (uploader && uploader._id === user._id));
+  const activeStep = doc?.signingSteps?.[doc.currentStep || 0];
+  const activeSignerId = typeof activeStep?.signer === "object" ? activeStep.signer._id : activeStep?.signer;
+  const hasWorkflow = Boolean(doc?.signingSteps?.length);
+  const legacyAssigneeId = typeof doc?.assignedTo === "object" ? doc.assignedTo?._id : doc?.assignedTo;
+  const canSign = Boolean(user && user.role !== "mahasiswa" && doc && !doc.supersededBy &&
+    (hasWorkflow ? activeSignerId === user._id && ["READY_TO_SIGN", "PARTIALLY_SIGNED", "PENDING_APPROVAL", "PENDING_BLOCKCHAIN"].includes(doc.status) :
+      ["DRAFT", "UNSIGNED", "PENDING_BLOCKCHAIN"].includes(doc.status) && (user.role === "admin" || legacyAssigneeId === user._id || (!legacyAssigneeId && uploader?._id === user._id && user.role === "staff_akademik"))));
+  const isPendingBlockchain = doc?.status === "PENDING_BLOCKCHAIN" || doc?.status === "PENDING_APPROVAL";
+  const canAssign = user?.role !== "mahasiswa" && !hasWorkflow && doc?.status !== "SIGNED" && (user?.role === "admin" || user?.role === "staff_administrasi");
 
   async function handleAssignSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -162,41 +149,9 @@ export function DocumentDetailPage() {
     setSigning(true);
     setSignOpen(true);
     try {
-      setSignStep("Menyiapkan data tanda tangan…");
-      const { data: prep } = await api.post(`/documents/${id}/sign/prepare`);
-      const hash: string = prep.hash;
-      const mock: boolean = prep.mock;
-
-      let walletAddress = DEMO_WALLET;
-      let signature = `demo-signature-${Date.now()}`;
-
-      if (hasMetaMask()) {
-        setSignStep("Menghubungkan MetaMask…");
-        walletAddress = await connectWallet();
-        if (!mock) {
-          setSignStep("Memastikan jaringan Sepolia…");
-          await ensureChain();
-        }
-        setSignStep("Menandatangani hash dengan wallet…");
-        const signed = await signHashMessage(hash);
-        walletAddress = signed.address;
-        signature = signed.signature;
-      } else if (!mock) {
-        throw new Error("MetaMask tidak terdeteksi.");
-      } else {
-        setSignStep("Mode demo — menggunakan wallet simulasi…");
-      }
-
-      const payload: Record<string, unknown> = { walletAddress, signature };
-      if (!mock) {
-        setSignStep("Mengirim transaksi ke blockchain (konfirmasi di MetaMask)…");
-        const txHash = await storeHashOnChain(hash, walletAddress);
-        payload.transactionHash = txHash;
-      }
-
-      setSignStep("Mencatat ke blockchain…");
-      await api.post(`/documents/${id}/sign/confirm`, payload);
-      toast.success("Dokumen berhasil ditandatangani & dicatat di blockchain!");
+      setSignStep("Mengesahkan dokumen dan menunggu pencatatan server…");
+      const result = await recordDocumentOnServer(id!);
+      toast.success(result.intermediate ? "Persetujuan tersimpan; giliran penandatangan berikutnya." : result.mock ? "Pengesahan selesai dalam mode demo." : "Dokumen disahkan dan tercatat di Sepolia.");
       setSignOpen(false);
       await load();
     } catch (err) {
@@ -224,7 +179,7 @@ export function DocumentDetailPage() {
     setPreviewUrl(null);
     try {
       // Serve signed PDF if available, otherwise draft
-      const url = doc?.status === "SIGNED" || doc?.status === "PENDING_BLOCKCHAIN"
+      const url = ["SIGNED", "PENDING_BLOCKCHAIN", "PENDING_APPROVAL", "PARTIALLY_SIGNED"].includes(doc?.status || "")
         ? `${fileUrl}?t=${Date.now()}`
         : `${fileUrl}?type=draft&t=${Date.now()}`;
       const r = await fetch(url, { headers: { Authorization: `Bearer ${getToken()}` } });
@@ -238,16 +193,16 @@ export function DocumentDetailPage() {
 
   useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
 
-  function downloadFile(type: "draft" | "signed" = "signed") {
-    const url = type === "draft" ? `${fileUrl}?type=draft&download=1` : `${fileUrl}?download=1`;
+  function downloadFile(type: "draft" | "signed" | "request" = "signed") {
+    const url = `${fileUrl}?type=${type}&download=1`;
     fetch(url, { headers: { Authorization: `Bearer ${getToken()}` } })
-      .then((r) => r.blob())
+      .then((r) => { if (!r.ok) throw new Error("Gagal mengunduh berkas"); return r.blob(); })
       .then((blob) => {
         const objUrl = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = objUrl;
         const base = doc?.fileName?.replace(/\.pdf$/i, "") || "dokumen";
-        a.download = type === "draft" ? `${base}_DRAFT.pdf` : `${base}_SIGNED.pdf`;
+        a.download = type === "request" ? "permohonan-awal.pdf" : `${base}_${type === "draft" ? "DRAFT" : doc?.status === "SIGNED" ? "SIGNED" : "IN_PROGRESS"}.pdf`;
         a.click();
         URL.revokeObjectURL(objUrl);
       })
@@ -287,7 +242,7 @@ export function DocumentDetailPage() {
           </Button>
 
           {/* Download buttons */}
-          <Button variant="outline" onClick={() => downloadFile(doc.status === "SIGNED" || doc.status === "PENDING_BLOCKCHAIN" ? "signed" : "draft")}>
+          <Button variant="outline" onClick={() => downloadFile(["SIGNED", "PENDING_BLOCKCHAIN", "PENDING_APPROVAL", "PARTIALLY_SIGNED"].includes(doc.status) ? "signed" : "draft")}>
             <Download className="mr-1.5 h-4 w-4" /> Unduh
           </Button>
 
@@ -313,12 +268,12 @@ export function DocumentDetailPage() {
           {canSign && isPendingBlockchain && (
             <Button onClick={handleSign} disabled={signing}>
               {signing ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Wallet className="mr-1.5 h-4 w-4" />}
-              Catat ke Blockchain
+              Sahkan Dokumen
             </Button>
           )}
 
           {/* Delete */}
-          {(user?.role === "admin" || (uploader && uploader._id === user?._id)) && (
+          {!doc.supersededBy && !doc.previousVersionId && ["DRAFT", "UNSIGNED"].includes(doc.status) && (user?.role === "admin" || (uploader && uploader._id === user?._id)) && (
             <Button variant="destructive" onClick={handleDelete}>
               <Trash2 className="mr-1.5 h-4 w-4" /> Hapus
             </Button>
@@ -332,10 +287,10 @@ export function DocumentDetailPage() {
           <Clock className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
           <div>
             <p className="text-sm font-semibold text-amber-800 dark:text-amber-400">
-              Tanda tangan visual sudah diterapkan — menunggu pencatatan blockchain
+              {doc.status === "PENDING_APPROVAL" ? "Tanda tangan visual diterapkan — menunggu persetujuan tahap ini" : "Tanda tangan visual diterapkan — menunggu pencatatan blockchain"}
             </p>
             <p className="text-xs text-amber-700 dark:text-amber-500 mt-0.5">
-              PDF final dan SHA-256 sudah siap. Klik tombol "Catat ke Blockchain" untuk menyelesaikan proses penandatanganan.
+              {doc.status === "PENDING_APPROVAL" ? "Klik Sahkan Dokumen untuk menyetujui tahap ini dan meneruskan ke penandatangan berikutnya." : "PDF final dan SHA-256 sudah siap. Klik Sahkan Dokumen untuk menyelesaikan pencatatan."}
             </p>
             <p className="text-[11px] font-mono text-amber-600 dark:text-amber-500 mt-1 break-all">
               SHA-256: {doc.hashDokumen}
@@ -343,6 +298,9 @@ export function DocumentDetailPage() {
           </div>
         </div>
       )}
+
+      {doc.hasRequestFile && <Button variant="outline" onClick={() => downloadFile("request")}><Download className="mr-2 h-4 w-4" />Unduh Permohonan Awal</Button>}
+      <DocumentWorkflow doc={doc} onChanged={load} />
 
       {/* Main content with tabs */}
       <div className="grid gap-6 lg:grid-cols-3">
@@ -381,7 +339,7 @@ export function DocumentDetailPage() {
                     )}
                   </InfoRow>
                   {doc.walletAddress && (
-                    <InfoRow label="Wallet Penandatangan">
+                    <InfoRow label={doc.recordingMethod === "server_wallet" ? "Wallet Pencatat Server" : "Wallet Penandatangan"}>
                       <span className="font-mono text-xs">{shortAddress(doc.walletAddress)}</span>
                       <CopyButton value={doc.walletAddress} />
                     </InfoRow>
@@ -417,10 +375,10 @@ export function DocumentDetailPage() {
                             </div>
                             <div className="min-w-0 flex-1">
                               <p className="text-sm font-medium">{signer?.nama || "Penandatangan"}</p>
-                              <p className="font-mono text-xs text-muted-foreground">{shortAddress(s.walletAddress)}</p>
+                              <p className="font-mono text-xs text-muted-foreground">{s.recordingMethod === "account_approval" ? "Persetujuan akun: " : s.recordingMethod === "server_wallet" ? "Wallet pencatat server: " : "Wallet: "}{s.recordingMethod === "account_approval" ? s.capacity : shortAddress(s.walletAddress)}</p>
                               <p className="text-xs text-muted-foreground">{formatDate(s.timestamp)}</p>
                             </div>
-                            <Badge variant="success">Terverifikasi</Badge>
+                            <Badge variant="success">Disetujui</Badge>
                           </div>
                         );
                       })}
@@ -453,7 +411,7 @@ export function DocumentDetailPage() {
                       </InfoRow>
                       <InfoRow label="Block Number">#{doc.blockNumber}</InfoRow>
                       <InfoRow label="Timestamp">{formatDate(doc.blockchainTimestamp)}</InfoRow>
-                      <InfoRow label="Network">Ethereum Sepolia</InfoRow>
+                      <InfoRow label="Network">{data.mock ? "Simulasi (demo)" : "Ethereum Sepolia"}</InfoRow>
                       {data.explorer && (
                         <InfoRow label="Etherscan">
                           <a
@@ -468,13 +426,13 @@ export function DocumentDetailPage() {
                       )}
                       <div className="mt-3 flex items-center gap-2 rounded-lg bg-green-50 dark:bg-green-950/20 px-3 py-2 text-xs text-green-700 dark:text-green-400">
                         <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                        Hash PDF final berhasil tercatat di blockchain Ethereum Sepolia.
+                        {data.mock ? "Hash PDF final tercatat pada simulasi demo." : "Hash PDF final berhasil tercatat di blockchain Ethereum Sepolia."}
                       </div>
                     </>
                   ) : (
                     <p className="py-2 text-muted-foreground text-sm">
                       {doc.status === "PENDING_BLOCKCHAIN"
-                        ? "PDF final siap — menunggu konfirmasi MetaMask untuk mencatat hash ke blockchain."
+                        ? "PDF final siap — menunggu pengesahan melalui server untuk mencatat hash ke blockchain."
                         : "Dokumen belum ditandatangani — buka editor tanda tangan untuk memulai proses."}
                     </p>
                   )}
@@ -530,8 +488,8 @@ export function DocumentDetailPage() {
               <ol className="space-y-2 text-xs">
                 {[
                   { label: "Upload Draft", done: true },
-                  { label: "Editor Tanda Tangan", done: doc.status !== "DRAFT" && doc.status !== "UNSIGNED" },
-                  { label: "Konfirmasi MetaMask", done: doc.status === "SIGNED" },
+                  { label: "Editor Tanda Tangan", done: hasWorkflow ? Boolean(doc.signingSteps?.some(s => ["APPLIED", "APPROVED"].includes(s.status))) : ["PENDING_BLOCKCHAIN", "SIGNED"].includes(doc.status) },
+                  { label: "Pencatatan oleh server", done: doc.status === "SIGNED" },
                   { label: "Tercatat di Blockchain", done: doc.status === "SIGNED" },
                 ].map((step, i) => (
                   <li key={i} className={`flex items-center gap-2 ${step.done ? "text-foreground" : "text-muted-foreground"}`}>
@@ -590,7 +548,7 @@ export function DocumentDetailPage() {
       <Dialog open={signOpen} onOpenChange={(o) => !signing && setSignOpen(o)}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Konfirmasi Blockchain</DialogTitle>
+            <DialogTitle>Pengesahan Dokumen</DialogTitle>
             <DialogDescription>Jangan tutup jendela ini.</DialogDescription>
           </DialogHeader>
           <div className="flex items-center gap-3 py-2">

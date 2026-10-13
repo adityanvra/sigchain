@@ -25,12 +25,12 @@ router.get("/:id/image", getSignatureImage);
 // Upload new signature image (replaces existing active)
 router.post(
   "/",
-  authorize("staff_akademik", "admin"),
+  authorize("staff_akademik", "staff_administrasi", "admin"),
   uploadImageMemory.single("image"),
   uploadSignature
 );
 
 // Delete a specific signature
-router.delete("/:id", authorize("staff_akademik", "admin"), deleteSignature);
+router.delete("/:id", authorize("staff_akademik", "staff_administrasi", "admin"), deleteSignature);
 
 export default router;

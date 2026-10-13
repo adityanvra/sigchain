@@ -24,8 +24,7 @@ Setelah deploy, `scripts/deploy.ts` otomatis:
   `frontend/src/blockchain/abi.json`;
 - menyalin alamat kontrak ke `contract-address.json` di kedua folder.
 
-Catat **alamat kontrak** → isi `CONTRACT_ADDRESS` (backend) dan
-`VITE_CONTRACT_ADDRESS` (frontend).
+Catat **alamat kontrak** → isi `CONTRACT_ADDRESS` pada backend. Wallet pencatat dikonfigurasi dengan `BLOCKCHAIN_PRIVATE_KEY` pada backend; lihat `../SERVER-SEPOLIA.md`. Frontend tidak mengirim transaksi wallet.
 
 ## API kontrak
 

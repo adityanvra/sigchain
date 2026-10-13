@@ -6,6 +6,12 @@ const statusConfig: Record<
   DocStatus,
   { label: string; variant: "success" | "warning" | "secondary" | "outline"; icon: React.ReactNode }
 > = {
+  SUBMITTED: { label: "Diajukan ke TU", variant: "warning", icon: <Clock className="h-3 w-3" /> },
+  READY_TO_SIGN: { label: "Siap Ditandatangani", variant: "outline", icon: <FileText className="h-3 w-3" /> },
+  PARTIALLY_SIGNED: { label: "Menunggu Penandatangan Berikutnya", variant: "warning", icon: <Clock className="h-3 w-3" /> },
+  PENDING_APPROVAL: { label: "Menunggu Persetujuan Tahap", variant: "warning", icon: <Clock className="h-3 w-3" /> },
+  NEEDS_REVISION: { label: "Perlu Perbaikan", variant: "warning", icon: <FileText className="h-3 w-3" /> },
+  REJECTED: { label: "Ditolak", variant: "secondary", icon: <FileText className="h-3 w-3" /> },
   SIGNED: {
     label: "Ditandatangani",
     variant: "success",

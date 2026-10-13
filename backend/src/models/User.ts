@@ -1,13 +1,16 @@
 import mongoose, { Document as MongoDoc, Schema } from "mongoose";
 import bcrypt from "bcryptjs";
 
-export type UserRole = "admin" | "staff_akademik" | "staff_administrasi";
+export type UserRole = "admin" | "staff_akademik" | "staff_administrasi" | "mahasiswa";
 
 export interface IUser extends MongoDoc {
   nama: string;
   email: string;
   password: string;
   role: UserRole;
+  jabatan: string[];
+  unit?: string;
+  nim?: string;
   walletAddress?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -28,10 +31,13 @@ const userSchema = new Schema<IUser>(
     password: { type: String, required: true, select: false },
     role: {
       type: String,
-      enum: ["admin", "staff_akademik", "staff_administrasi"],
+      enum: ["admin", "staff_akademik", "staff_administrasi", "mahasiswa"],
       required: true,
       default: "staff_administrasi",
     },
+    jabatan: { type: [String], default: [] },
+    unit: { type: String, trim: true, maxlength: 120, default: "" },
+    nim: { type: String, trim: true, maxlength: 30, default: "" },
     walletAddress: {
       type: String,
       lowercase: true,

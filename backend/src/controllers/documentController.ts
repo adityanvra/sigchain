@@ -10,9 +10,11 @@ import { sha256Buffer } from "../services/hashService";
 import { recordAudit } from "../services/auditService";
 import { qrPngBuffer, qrDataUrl, verifyUrlFor } from "../services/qrService";
 import { blockchain } from "../services/blockchainService";
-import { applySignatureToPdf } from "../services/pdfService";
+import { applySignatureToPdf, addVerificationPage } from "../services/pdfService";
 import { Types } from "mongoose";
 import { env } from "../config/env";
+import { documentScope, canReadDocument, assertCurrentSigner } from "../services/documentAccess";
+import { notifyDocument } from "../models/Notification";
 
 const uploadMetaSchema = z.object({
   namaDokumen: z.string().min(1).max(200).optional(),
@@ -40,18 +42,7 @@ const applySignatureSchema = z.object({
  * - Akademisi (staff_akademik) sees documents they uploaded OR assigned to them.
  * - Staff Administrasi sees only their own uploads.
  */
-function scopeFilter(req: Request) {
-  if (req.user!.role === "admin") return {};
-  if (req.user!.role === "staff_akademik") {
-    return {
-      $or: [
-        { uploader: req.user!.sub },
-        { assignedTo: req.user!.sub },
-      ],
-    };
-  }
-  return { uploader: req.user!.sub };
-}
+function scopeFilter(req: Request) { return documentScope(req); }
 
 // ---------------------------------------------------------------------------
 // Upload (single)
@@ -60,6 +51,7 @@ export const uploadDocument = asyncHandler(async (req: Request, res: Response) =
   if (!req.file) throw ApiError.badRequest("File PDF wajib diunggah");
 
   const meta = uploadMetaSchema.parse(req.body);
+  if (req.user!.role === "mahasiswa" && meta.assignedTo) throw ApiError.badRequest("Mahasiswa memilih alur penandatangan pada detail pengajuan, bukan penugasan langsung");
   const buffer = req.file.buffer;
 
   let targetAssigneeId = null;
@@ -76,8 +68,6 @@ export const uploadDocument = asyncHandler(async (req: Request, res: Response) =
     namaDokumen: meta.namaDokumen?.trim() || req.file.originalname.replace(/\.pdf$/i, ""),
     description: meta.description,
     draftFileData: buffer,
-    // Keep legacy fileData alias so old download routes still work during transition
-    fileData: buffer,
     fileName: req.file.originalname,
     mimeType: req.file.mimetype,
     fileSize: req.file.size,
@@ -103,7 +93,9 @@ export const uploadDocument = asyncHandler(async (req: Request, res: Response) =
   const createdDoc = await DocumentModel.findById(doc._id)
     .select("-draftFileData -signedFileData -fileData")
     .populate("uploader", "nama email role walletAddress")
-    .populate("assignedTo", "nama email role walletAddress");
+    .populate("assignedTo", "nama email role walletAddress")
+    .populate("reviewer", "nama email role")
+    .populate("signingSteps.signer", "nama role jabatan unit");
 
   res.status(201).json({ success: true, document: createdDoc });
 
@@ -130,6 +122,7 @@ export const bulkUploadDocuments = asyncHandler(async (req: Request, res: Respon
   }
 
   const defaultAssignedTo = req.body.defaultAssignedTo || null;
+  if (req.user!.role === "mahasiswa" && (defaultAssignedTo || Object.values(assignments).some(a => a.assignedTo))) throw ApiError.badRequest("Atur alur pengajuan mahasiswa pada detail dokumen");
   let defaultAssignee = null;
   if (defaultAssignedTo) {
     defaultAssignee = await User.findById(defaultAssignedTo);
@@ -161,7 +154,6 @@ export const bulkUploadDocuments = asyncHandler(async (req: Request, res: Respon
       namaDokumen: fileMeta.namaDokumen?.trim() || file.originalname.replace(/\.pdf$/i, ""),
       description: fileMeta.description || "",
       draftFileData: buffer,
-      fileData: buffer,
       fileName: file.originalname,
       mimeType: file.mimetype,
       fileSize: file.size,
@@ -191,6 +183,8 @@ export const bulkUploadDocuments = asyncHandler(async (req: Request, res: Respon
     .select("-draftFileData -signedFileData -fileData")
     .populate("uploader", "nama email role walletAddress")
     .populate("assignedTo", "nama email role walletAddress")
+    .populate("reviewer", "nama email role")
+    .populate("signingSteps.signer", "nama role jabatan unit")
     .sort({ createdAt: -1 });
 
   res.status(201).json({ success: true, count: populatedDocs.length, documents: populatedDocs });
@@ -201,27 +195,21 @@ export const bulkUploadDocuments = asyncHandler(async (req: Request, res: Respon
 // Apply visual signature → generate PDF final + hash
 // ---------------------------------------------------------------------------
 export const applySignature = asyncHandler(async (req: Request, res: Response) => {
-  const doc = await DocumentModel.findById(req.params.id).select("+draftFileData +fileData");
+  const doc = await DocumentModel.findById(req.params.id).select("+draftFileData +signedFileData +requestFileData +fileData");
   if (!doc) throw ApiError.notFound("Dokumen tidak ditemukan");
 
   if (doc.status === "SIGNED") {
     throw ApiError.conflict("Dokumen sudah ditandatangani dan tidak dapat diubah");
   }
-
-  // Authorization check
-  const isAdmin = req.user!.role === "admin";
-  const isAssigned = doc.assignedTo ? String(doc.assignedTo) === req.user!.sub : false;
-  const isUploaderAkademik =
-    req.user!.role === "staff_akademik" &&
-    String(doc.uploader) === req.user!.sub &&
-    !doc.assignedTo;
-
-  if (!isAdmin && !isAssigned && !isUploaderAkademik) {
-    throw ApiError.forbidden(
-      "Hanya Akademisi yang ditugaskan atau Administrator yang dapat menerapkan tanda tangan"
-    );
+  if (doc.status === "PENDING_BLOCKCHAIN") {
+    throw ApiError.conflict("PDF final sudah siap; lanjutkan pencatatan blockchain tanpa menimpa tanda tangan");
   }
 
+  assertCurrentSigner(doc, req);
+  const isAdmin = req.user!.role === "admin";
+  if (doc.signingSteps.length && !["READY_TO_SIGN", "PARTIALLY_SIGNED"].includes(doc.status)) {
+    throw ApiError.conflict("Dokumen belum lolos pemeriksaan atau belum mendapat giliran tanda tangan");
+  }
   const params = applySignatureSchema.parse(req.body);
 
   // Find signature image
@@ -245,15 +233,20 @@ export const applySignature = asyncHandler(async (req: Request, res: Response) =
     }
   }
 
+  if (doc.signingSteps.some(s => s.status === "APPROVED" && s.position && s.position.page === params.page &&
+      params.x < s.position.x + s.position.width && params.x + params.width > s.position.x &&
+      params.y < s.position.y + s.position.height && params.y + params.height > s.position.y)) {
+    throw ApiError.badRequest("Area tanda tangan bertumpuk dengan tanda tangan yang sudah disetujui");
+  }
+
   // Get draft PDF bytes (support both old fileData and new draftFileData)
-  const draftBuffer: Buffer | undefined = doc.draftFileData || doc.fileData;
+  const draftBuffer: Buffer | undefined = doc.signingSteps.length && doc.currentStep > 0 ? doc.signedFileData : (doc.draftFileData || doc.fileData);
   if (!draftBuffer) {
     throw ApiError.notFound("Berkas draft PDF tidak tersedia di server");
   }
 
-  // Apply signature to PDF (no QR embedded — QR is only shown in the
-  // blockchain verification panel on the document detail page)
-  const signedPdfBuffer = await applySignatureToPdf({
+  // Preserve earlier signatures; append a verification QR only at the final stage.
+  let signedPdfBuffer = await applySignatureToPdf({
     pdfBuffer: draftBuffer,
     signatureImageBuffer: sigRecord.imageData,
     signatureMimeType: sigRecord.mimeType,
@@ -262,20 +255,37 @@ export const applySignature = asyncHandler(async (req: Request, res: Response) =
     y: params.y,
     width: params.width,
     height: params.height,
-  });
+  }).catch(error => { throw ApiError.badRequest(error instanceof Error ? error.message : "PDF atau gambar tanda tangan tidak valid"); });
+  if (!doc.signingSteps.length || doc.currentStep === doc.signingSteps.length - 1) {
+    const verifyUrl = `${getFrontendBaseUrl(req)}/verify/${doc._id}`;
+    signedPdfBuffer = await addVerificationPage(signedPdfBuffer, await qrPngBuffer(verifyUrl), verifyUrl);
+  }
 
   // Hash the FINAL signed PDF
+  const storedPdfBytes = signedPdfBuffer.length + (doc.draftFileData?.length || doc.fileData?.length || 0) + (doc.requestFileData?.length || 0);
+  if (storedPdfBytes > 15 * 1024 * 1024) throw ApiError.badRequest("Gabungan PDF dan tanda tangan terlalu besar. Gunakan PDF dan gambar tanda tangan yang lebih kecil.");
   const finalHash = sha256Buffer(signedPdfBuffer);
 
   // Persist — use updateOne to atomically write buffer fields without loading
   // the full document back into memory (avoids Vercel response size limit)
-  await DocumentModel.updateOne(
-    { _id: doc._id },
+  const steps = doc.signingSteps;
+  if (steps.length) {
+    steps[doc.currentStep].status = "APPLIED";
+    steps[doc.currentStep].position = { page: params.page, x: params.x, y: params.y, width: params.width, height: params.height };
+    steps[doc.currentStep].hash = finalHash;
+    steps[doc.currentStep].appliedAt = new Date();
+  }
+  const applied = await DocumentModel.updateOne(
+    { _id: doc._id, status: doc.status, currentStep: doc.currentStep, workflowVersion: doc.workflowVersion || { $in: [0, null] } },
     {
+      $inc: { workflowVersion: 1 },
+      $unset: { fileData: "" },
       $set: {
         signedFileData: signedPdfBuffer,
+        fileSize: signedPdfBuffer.length,
         hashDokumen: finalHash,
-        status: "PENDING_BLOCKCHAIN",
+        status: steps.length && doc.currentStep < steps.length - 1 ? "PENDING_APPROVAL" : "PENDING_BLOCKCHAIN",
+        signingSteps: steps,
         signaturePosition: {
           page: params.page,
           x: params.x,
@@ -286,6 +296,7 @@ export const applySignature = asyncHandler(async (req: Request, res: Response) =
       },
     }
   );
+  if (!applied.modifiedCount) throw ApiError.conflict("Status dokumen berubah; muat ulang sebelum menerapkan tanda tangan");
 
   await recordAudit({
     userId: req.user!.sub,
@@ -311,14 +322,16 @@ export const applySignature = asyncHandler(async (req: Request, res: Response) =
   const updatedDoc = await DocumentModel.findById(doc._id)
     .select("-draftFileData -signedFileData -fileData")
     .populate("uploader", "nama email role walletAddress")
-    .populate("assignedTo", "nama email role walletAddress");
+    .populate("assignedTo", "nama email role walletAddress")
+    .populate("reviewer", "nama email role")
+    .populate("signingSteps.signer", "nama role jabatan unit");
 
   res.json({
     success: true,
     document: updatedDoc,
     hash: finalHash,
     message:
-      "Tanda tangan berhasil diterapkan. Lanjutkan dengan konfirmasi MetaMask untuk mencatat ke blockchain.",
+      "Tanda tangan berhasil diterapkan. Lanjutkan pengesahan untuk mencatat PDF final melalui server.",
   });
 });
 
@@ -335,6 +348,10 @@ export const assignDocument = asyncHandler(async (req: Request, res: Response) =
   if (doc.status === "SIGNED") {
     throw ApiError.conflict("Dokumen yang sudah ditandatangani tidak dapat diubah penugasannya");
   }
+  if (doc.signingSteps.length) throw ApiError.conflict("Gunakan pengaturan alur sebelum pengajuan, bukan penugasan tunggal");
+  if (doc.approvalUserId || (doc.blockchainLockUntil && doc.blockchainLockUntil > new Date())) {
+    throw ApiError.conflict("Persetujuan pencatatan sudah dimulai; penugasan tidak dapat diubah");
+  }
 
   const isAdmin = req.user!.role === "admin";
   const isUploader = String(doc.uploader) === req.user!.sub;
@@ -350,8 +367,12 @@ export const assignDocument = asyncHandler(async (req: Request, res: Response) =
     }
   }
 
-  doc.assignedTo = targetUser ? targetUser._id : (null as unknown as Types.ObjectId);
-  await doc.save();
+  const assignment = await DocumentModel.updateOne(
+    { _id: doc._id, status: { $ne: "SIGNED" }, approvalUserId: null,
+      $or: [{ blockchainLockUntil: null }, { blockchainLockUntil: { $lte: new Date() } }] },
+    { $set: { assignedTo: targetUser ? targetUser._id : null } }
+  );
+  if (!assignment.matchedCount) throw ApiError.conflict("Persetujuan sudah dimulai atau dokumen berubah; penugasan tidak dapat diubah");
 
   await recordAudit({
     userId: req.user!.sub,
@@ -370,7 +391,9 @@ export const assignDocument = asyncHandler(async (req: Request, res: Response) =
   const updatedDoc = await DocumentModel.findById(doc._id)
     .select("-draftFileData -signedFileData -fileData")
     .populate("uploader", "nama email role walletAddress")
-    .populate("assignedTo", "nama email role walletAddress");
+    .populate("assignedTo", "nama email role walletAddress")
+    .populate("reviewer", "nama email role")
+    .populate("signingSteps.signer", "nama role jabatan unit");
 
 
   res.json({ success: true, document: updatedDoc });
@@ -383,7 +406,7 @@ export const listDocuments = asyncHandler(async (req: Request, res: Response) =>
   const { status, q } = req.query as { status?: string; q?: string };
   const filter: Record<string, unknown> = scopeFilter(req);
 
-  const validStatuses = ["DRAFT", "UNSIGNED", "PENDING_BLOCKCHAIN", "SIGNED"];
+  const validStatuses = ["DRAFT", "UNSIGNED", "SUBMITTED", "READY_TO_SIGN", "PARTIALLY_SIGNED", "PENDING_APPROVAL", "NEEDS_REVISION", "REJECTED", "PENDING_BLOCKCHAIN", "SIGNED"];
   if (status && validStatuses.includes(status)) filter.status = status;
   if (q) filter.namaDokumen = { $regex: q, $options: "i" };
 
@@ -391,6 +414,8 @@ export const listDocuments = asyncHandler(async (req: Request, res: Response) =>
     .select("-draftFileData -signedFileData -fileData")
     .populate("uploader", "nama email role")
     .populate("assignedTo", "nama email role walletAddress")
+    .populate("reviewer", "nama email role")
+    .populate("signingSteps.signer", "nama role jabatan unit")
     .sort({ createdAt: -1 });
 
   res.json({ success: true, documents });
@@ -417,19 +442,14 @@ export const getDocument = asyncHandler(async (req: Request, res: Response) => {
   const doc = await DocumentModel.findById(req.params.id)
     .select("-draftFileData -signedFileData -fileData")
     .populate("uploader", "nama email role walletAddress")
-    .populate("assignedTo", "nama email role walletAddress");
+    .populate("assignedTo", "nama email role walletAddress")
+    .populate("reviewer", "nama email role")
+    .populate("signingSteps.signer", "nama role jabatan unit");
 
 
   if (!doc) throw ApiError.notFound("Dokumen tidak ditemukan");
 
-  const uploaderId = String((doc.uploader as unknown as { _id: Types.ObjectId })?._id || doc.uploader);
-  const assignedId = doc.assignedTo
-    ? String((doc.assignedTo as unknown as { _id: Types.ObjectId })?._id || doc.assignedTo)
-    : null;
-  const isAllowed =
-    req.user!.role === "admin" ||
-    uploaderId === req.user!.sub ||
-    assignedId === req.user!.sub;
+  const isAllowed = canReadDocument(doc, req);
 
   if (!isAllowed) {
     throw ApiError.forbidden("Anda tidak memiliki izin mengakses dokumen ini");
@@ -452,7 +472,8 @@ export const getDocument = asyncHandler(async (req: Request, res: Response) => {
     signatures,
     qrCode: qr,
     verifyUrl,
-    explorer: doc.transactionHash
+    mock: blockchain.isMock(),
+    explorer: !blockchain.isMock() && doc.status === "SIGNED" && doc.transactionHash && blockchain.config().blockExplorer
       ? `${blockchain.config().blockExplorer}/tx/${doc.transactionHash}`
       : null,
   });
@@ -463,16 +484,11 @@ export const getDocument = asyncHandler(async (req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 export const downloadDocument = asyncHandler(async (req: Request, res: Response) => {
   const doc = await DocumentModel.findById(req.params.id).select(
-    "+draftFileData +signedFileData +fileData"
+    "+draftFileData +signedFileData +requestFileData +fileData"
   );
   if (!doc) throw ApiError.notFound("Dokumen tidak ditemukan");
 
-  const uploaderId = String(doc.uploader);
-  const assignedId = doc.assignedTo ? String(doc.assignedTo) : null;
-  const isAllowed =
-    req.user!.role === "admin" ||
-    uploaderId === req.user!.sub ||
-    assignedId === req.user!.sub;
+  const isAllowed = canReadDocument(doc, req);
 
   if (!isAllowed) {
     throw ApiError.forbidden("Anda tidak memiliki izin mengunduh berkas ini");
@@ -483,14 +499,18 @@ export const downloadDocument = asyncHandler(async (req: Request, res: Response)
   let fileBuffer: Buffer | undefined;
   let fileName = doc.fileName;
 
-  if (wantDraft || !doc.signedFileData) {
+  if (req.query.type === "request") {
+    if (!doc.requestFileData) throw ApiError.notFound("Berkas permohonan awal tidak tersedia");
+    fileBuffer = doc.requestFileData;
+    fileName = "permohonan-awal.pdf";
+  } else if (wantDraft || !doc.signedFileData) {
     fileBuffer = doc.draftFileData || doc.fileData;
     // keep original fileName for draft
   } else {
     fileBuffer = doc.signedFileData;
     // suffix the filename to indicate it's the signed copy
     const base = doc.fileName.replace(/\.pdf$/i, "");
-    fileName = `${base}_SIGNED.pdf`;
+    fileName = `${base}_${doc.status === "SIGNED" ? "SIGNED" : "IN_PROGRESS"}.pdf`;
   }
 
   if (!fileBuffer) throw ApiError.notFound("Berkas tidak tersedia di server");
@@ -505,7 +525,7 @@ export const downloadDocument = asyncHandler(async (req: Request, res: Response)
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Length", buffer.length);
   res.setHeader("Cache-Control", "private, no-cache, no-store, must-revalidate");
-  res.setHeader("Content-Disposition", `${disposition}; filename="${fileName}"`);
+  res.setHeader("Content-Disposition", `${disposition}; filename="document.pdf"; filename*=UTF-8''${encodeURIComponent(fileName)}`);
   res.end(buffer);
 });
 
@@ -516,6 +536,7 @@ export const documentQrPng = asyncHandler(async (req: Request, res: Response) =>
   const doc = await DocumentModel.findById(req.params.id);
   if (!doc) throw ApiError.notFound("Dokumen tidak ditemukan");
 
+  if (!canReadDocument(doc, req)) throw ApiError.forbidden("Tidak ada izin mengakses QR dokumen ini");
   // QR points to public verify page for this document
   const frontendBase = getFrontendBaseUrl(req);
   const verifyUrl = `${frontendBase}/verify/${doc._id}`;
@@ -534,9 +555,19 @@ export const deleteDocument = asyncHandler(async (req: Request, res: Response) =
   if (req.user!.role !== "admin" && String(doc.uploader) !== req.user!.sub) {
     throw ApiError.forbidden("Hanya pengunggah atau administrator yang dapat menghapus dokumen ini");
   }
+  if (doc.supersededBy || doc.previousVersionId || !["DRAFT", "UNSIGNED"].includes(doc.status)) throw ApiError.conflict("Dokumen yang sudah diproses atau memiliki riwayat versi tidak dapat dihapus");
+  if (doc.status === "PENDING_BLOCKCHAIN" && (doc.approvalUserId || doc.blockchainLockUntil)) {
+    throw ApiError.conflict("Selesaikan pencatatan transaksi sebelum menghapus dokumen");
+  }
 
+  const deleted = await DocumentModel.findOneAndDelete({
+    _id: doc._id, status: doc.status, supersededBy: null, previousVersionId: null,
+    workflowVersion: doc.workflowVersion ? doc.workflowVersion : { $in: [0, null] },
+    $or: [{ blockchainLockUntil: null }, { blockchainLockUntil: { $lte: new Date() } }],
+    ...(doc.status === "PENDING_BLOCKCHAIN" ? { approvalUserId: null } : {}),
+  });
+  if (!deleted) throw ApiError.conflict("Status dokumen berubah atau pencatatan sedang diproses; dokumen tidak dihapus");
   await Signature.deleteMany({ documentId: doc._id });
-  await doc.deleteOne();
 
   await recordAudit({
     userId: req.user!.sub,

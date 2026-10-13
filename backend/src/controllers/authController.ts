@@ -16,7 +16,7 @@ export const registerSchema = z.object({
   nama: z.string().min(2).max(120),
   email: z.string().email(),
   password: z.string().min(6).max(128),
-  role: z.enum(["admin", "staff_akademik", "staff_administrasi"]).optional(),
+  role: z.enum(["admin", "staff_akademik", "staff_administrasi", "mahasiswa"]).optional(),
   walletAddress: z.string().optional(),
 });
 

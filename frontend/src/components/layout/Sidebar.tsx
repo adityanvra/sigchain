@@ -5,7 +5,7 @@ import {
   Upload,
   ShieldCheck,
   ScrollText,
-  Users,
+  Users, Bell,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
@@ -19,6 +19,7 @@ interface NavItem {
 }
 
 const items: NavItem[] = [
+  { to: "/notifications", label: "Notifikasi", icon: Bell },
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/documents", label: "Dokumen", icon: FileText },
   { to: "/upload", label: "Upload Dokumen", icon: Upload },

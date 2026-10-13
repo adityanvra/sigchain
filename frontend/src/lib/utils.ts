@@ -36,6 +36,7 @@ export function formatBytes(bytes?: number): string {
 }
 
 export const roleLabel: Record<string, string> = {
+  mahasiswa: "Mahasiswa",
   admin: "Admin",
   staff_akademik: "Akademisi",
   staff_administrasi: "Staff Administrasi",

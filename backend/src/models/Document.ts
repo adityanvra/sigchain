@@ -3,12 +3,22 @@ import mongoose, { Document as MongoDoc, Schema, Types } from "mongoose";
 /**
  * Document lifecycle:
  *  DRAFT              → uploaded, no signature, no hash yet
- *  PENDING_BLOCKCHAIN → visual signature applied, PDF final ready, hash computed — waiting for MetaMask tx
+ *  PENDING_BLOCKCHAIN → PDF final ready, waiting for server-side anchoring
  *  SIGNED             → hash anchored on-chain
  *
  * Legacy status `UNSIGNED` is kept for backward-compat with existing records.
  */
-export type DocStatus = "DRAFT" | "UNSIGNED" | "PENDING_BLOCKCHAIN" | "SIGNED";
+export type DocStatus = "DRAFT" | "UNSIGNED" | "SUBMITTED" | "READY_TO_SIGN" | "PARTIALLY_SIGNED" | "PENDING_APPROVAL" | "NEEDS_REVISION" | "REJECTED" | "PENDING_BLOCKCHAIN" | "SIGNED";
+
+export interface SigningStep {
+  signer: Types.ObjectId;
+  capacity: string;
+  status: "WAITING" | "READY" | "APPLIED" | "APPROVED";
+  position?: SignaturePosition;
+  appliedAt?: Date;
+  approvedAt?: Date;
+  hash?: string;
+}
 
 export interface SignaturePosition {
   page: number;   // 0-indexed page number in the PDF
@@ -23,6 +33,7 @@ export interface IDocument extends MongoDoc {
   description?: string;
   // Draft PDF (always stored)
   draftFileData?: Buffer;
+  requestFileData?: Buffer;
   // Final PDF after visual signature + QR are embedded
   signedFileData?: Buffer;
   // Legacy / compat alias kept so old download routes still work
@@ -36,8 +47,22 @@ export interface IDocument extends MongoDoc {
   blockNumber?: number;
   blockchainTimestamp?: Date;
   walletAddress?: string;
+  recordingMethod?: "browser_wallet" | "server_wallet";
+  blockchainLockUntil?: Date;
+  approvalUserId?: Types.ObjectId;
+  approvalAt?: Date;
   uploader: Types.ObjectId;
   assignedTo?: Types.ObjectId;
+  reviewer?: Types.ObjectId;
+  signingSteps: SigningStep[];
+  currentStep: number;
+  workflowVersion: number;
+  reviewReason?: string;
+  version: number;
+  previousVersionId?: Types.ObjectId;
+  supersededBy?: Types.ObjectId;
+  documentType?: string;
+  hasRequestFile?: boolean;
   signaturePosition?: SignaturePosition;
   status: DocStatus;
   createdAt: Date;
@@ -62,6 +87,7 @@ const documentSchema = new Schema<IDocument>(
 
     // Draft PDF — stored as binary in MongoDB
     draftFileData: { type: Buffer, select: false },
+    requestFileData: { type: Buffer, select: false },
     // Signed PDF final (after visual sig + QR applied)
     signedFileData: { type: Buffer, select: false },
     // Alias kept for any legacy code that still references fileData
@@ -78,15 +104,35 @@ const documentSchema = new Schema<IDocument>(
     blockNumber: { type: Number, default: null },
     blockchainTimestamp: { type: Date, default: null },
     walletAddress: { type: String, default: null, lowercase: true, trim: true },
+    recordingMethod: { type: String, enum: ["browser_wallet", "server_wallet"], default: "browser_wallet" },
+    blockchainLockUntil: { type: Date, default: null },
+    approvalUserId: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    approvalAt: { type: Date, default: null },
 
     uploader: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
     assignedTo: { type: Schema.Types.ObjectId, ref: "User", default: null, index: true },
+    reviewer: { type: Schema.Types.ObjectId, ref: "User", default: null, index: true },
+    signingSteps: { type: [{
+      signer: { type: Schema.Types.ObjectId, ref: "User", required: true },
+      capacity: { type: String, required: true, trim: true, maxlength: 120 },
+      status: { type: String, enum: ["WAITING", "READY", "APPLIED", "APPROVED"], default: "WAITING" },
+      position: { type: signaturePositionSchema, default: null },
+      appliedAt: Date, approvedAt: Date, hash: String,
+    }], default: [] },
+    currentStep: { type: Number, default: 0 },
+    workflowVersion: { type: Number, default: 0 },
+    reviewReason: { type: String, default: "", maxlength: 2000 },
+    version: { type: Number, default: 1 },
+    previousVersionId: { type: Schema.Types.ObjectId, ref: "Document", default: null },
+    supersededBy: { type: Schema.Types.ObjectId, ref: "Document", default: null },
+    documentType: { type: String, default: "Dokumen akademik", maxlength: 120 },
+    hasRequestFile: { type: Boolean, default: false },
 
     signaturePosition: { type: signaturePositionSchema, default: null },
 
     status: {
       type: String,
-      enum: ["DRAFT", "UNSIGNED", "PENDING_BLOCKCHAIN", "SIGNED"],
+      enum: ["DRAFT", "UNSIGNED", "SUBMITTED", "READY_TO_SIGN", "PARTIALLY_SIGNED", "PENDING_APPROVAL", "NEEDS_REVISION", "REJECTED", "PENDING_BLOCKCHAIN", "SIGNED"],
       default: "DRAFT",
       index: true,
     },
@@ -94,4 +140,8 @@ const documentSchema = new Schema<IDocument>(
   { timestamps: true }
 );
 
+documentSchema.set("toJSON", { transform: (_doc, ret) => {
+  delete ret.draftFileData; delete ret.signedFileData; delete ret.requestFileData; delete ret.fileData;
+  return ret;
+} });
 export const DocumentModel = mongoose.model<IDocument>("Document", documentSchema);

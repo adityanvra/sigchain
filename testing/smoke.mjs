@@ -9,6 +9,9 @@
 const API = process.env.API_URL || "http://localhost:5000/api";
 const EMAIL = process.env.SIG_EMAIL || "akademik@uad.ac.id";
 const PASSWORD = process.env.SIG_PASSWORD || "password123";
+import { createRequire } from "node:module";
+const require = createRequire(new URL("../backend/package.json", import.meta.url));
+const { PDFDocument } = require("pdf-lib");
 
 let passed = 0;
 let failed = 0;
@@ -24,9 +27,10 @@ function ok(name, cond, extra = "") {
 }
 
 // A minimal but valid PDF (starts with %PDF-).
-function pdfBlob(extra = "") {
-  const content = `%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n${extra}%%EOF`;
-  return new Blob([content], { type: "application/pdf" });
+async function pdfBlob(extra = "") {
+  const pdf = await PDFDocument.create();
+  pdf.addPage().drawText(extra);
+  return new Blob([await pdf.save()], { type: "application/pdf" });
 }
 
 async function main() {
@@ -61,13 +65,13 @@ async function main() {
   let hash = "";
   {
     const form = new FormData();
-    form.append("file", pdfBlob(`unik-${Date.now()}\n`), "uji.pdf");
+    form.append("file", await pdfBlob(`unik-${Date.now()}`), "uji.pdf");
     form.append("namaDokumen", "Dokumen Uji Black-Box");
     const r = await fetch(`${API}/documents`, { method: "POST", headers: auth, body: form });
     const j = await r.json();
     docId = j.document?._id || "";
     hash = j.document?.hashDokumen || "";
-    ok("3. Upload PDF berhasil", r.status === 201 && hash.length === 64);
+    ok("3. Upload draft PDF berhasil", r.status === 201 && !!docId && hash === "");
   }
 
   // 4. Upload non-PDF
@@ -80,14 +84,22 @@ async function main() {
 
   // 5 + 6. Sign + on-chain record
   {
+    const image = new FormData();
+    image.append("image", new Blob([Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jF9sAAAAASUVORK5CYII=", "base64")], { type: "image/png" }), "test-signature.png");
+    const sigResponse = await fetch(`${API}/academic-signatures`, { method: "POST", headers: auth, body: image });
+    if (!sigResponse.ok) throw new Error("Gagal menyiapkan tanda tangan uji");
+    const applied = await fetch(`${API}/documents/${docId}/apply-signature`, {
+      method: "POST", headers: { ...auth, "Content-Type": "application/json" },
+      body: JSON.stringify({ page: 0, x: 30, y: 30, width: 80, height: 30 }),
+    });
+    const final = await applied.json();
+    if (!applied.ok) throw new Error(final.message || "Finalisasi PDF gagal");
+    hash = final.hash;
     await fetch(`${API}/documents/${docId}/sign/prepare`, { method: "POST", headers: auth });
     const r = await fetch(`${API}/documents/${docId}/sign/confirm`, {
       method: "POST",
       headers: { ...auth, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        walletAddress: "0x1111111111111111111111111111111111111111",
-        signature: "smoke-signature",
-      }),
+      body: JSON.stringify({}),
     });
     const j = await r.json();
     ok("5. Tanda tangan berhasil", r.status === 200 && j.document?.status === "SIGNED");
@@ -107,9 +119,9 @@ async function main() {
   // 8. Verify modified → TIDAK VALID
   {
     const fake = "f".repeat(64);
-    const r = await fetch(`${API}/verify/${fake}`);
+    const r = await fetch(`${API}/verify/${fake}?documentId=${docId}`);
     const j = await r.json();
-    ok("8. Verifikasi dokumen dimodifikasi TIDAK VALID", j.status === "TIDAK VALID");
+    ok("8. Hash berbeda dari referensi TIDAK VALID", j.status === "TIDAK VALID" && j.outcome === "DIFFERENT" && j.referenceHash === hash);
   }
 
   // 9. Audit trail

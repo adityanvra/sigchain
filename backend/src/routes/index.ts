@@ -9,6 +9,7 @@ import academicSignatureRoutes from "./academicSignatureRoutes";
 import { env } from "../config/env";
 import { blockchain } from "../services/blockchainService";
 
+import notificationRoutes from "./notificationRoutes";
 const router = Router();
 
 router.get("/health", (_req, res) => {
@@ -21,6 +22,7 @@ router.get("/health", (_req, res) => {
   });
 });
 
+router.use("/notifications", notificationRoutes);
 router.use("/auth", authRoutes);
 router.use("/users", userRoutes);
 router.use("/documents", documentRoutes);

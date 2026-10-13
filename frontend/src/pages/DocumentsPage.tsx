@@ -20,7 +20,7 @@ import { formatBytes, formatDate } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
 import type { DocumentItem, DocStatus, User } from "@/types";
 
-type Filter = "ALL" | "SIGNED" | "PENDING_BLOCKCHAIN" | "DRAFT" | "ASSIGNED_ME";
+type Filter = "ALL" | "SIGNED" | "PENDING_BLOCKCHAIN" | "DRAFT" | "ASSIGNED_ME" | "SUBMITTED" | "NEEDS_REVISION" | "REJECTED" | "PARTIALLY_SIGNED";
 
 export function DocumentsPage() {
   const { user } = useAuth();
@@ -34,6 +34,7 @@ export function DocumentsPage() {
     try {
       const params: Record<string, string> = {};
       const statusMap: Partial<Record<Filter, DocStatus>> = {
+        SUBMITTED: "SUBMITTED", NEEDS_REVISION: "NEEDS_REVISION", REJECTED: "REJECTED", PARTIALLY_SIGNED: "PARTIALLY_SIGNED",
         SIGNED: "SIGNED",
         PENDING_BLOCKCHAIN: "PENDING_BLOCKCHAIN",
         DRAFT: "DRAFT",
@@ -66,7 +67,11 @@ export function DocumentsPage() {
   const isAkademisi = user?.role === "staff_akademik";
 
   const filterButtons: { key: Filter; label: string }[] = [
-    { key: "ALL", label: "Semua" },
+    { key: "ALL", label: user?.role === "mahasiswa" ? "Pengajuan Saya" : "Semua" },
+    { key: "SUBMITTED", label: "Diajukan" },
+    { key: "NEEDS_REVISION", label: "Perlu Perbaikan" },
+    { key: "PARTIALLY_SIGNED", label: "Dalam Persetujuan" },
+    { key: "REJECTED", label: "Ditolak" },
     { key: "DRAFT", label: "Draft" },
     { key: "PENDING_BLOCKCHAIN", label: "Menunggu Blockchain" },
     { key: "SIGNED", label: "Ditandatangani" },

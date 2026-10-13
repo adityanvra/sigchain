@@ -1,6 +1,7 @@
 import mongoose, { Document as MongoDoc, Schema, Types } from "mongoose";
 
 export type AuditAction =
+  | "WORKFLOW" | "SUBMIT" | "REVIEW" | "REVISION"
   | "LOGIN"
   | "LOGOUT"
   | "UPLOAD"
@@ -36,6 +37,7 @@ const auditTrailSchema = new Schema<IAuditTrail>(
     action: {
       type: String,
       enum: [
+        "WORKFLOW", "SUBMIT", "REVIEW", "REVISION",
         "LOGIN",
         "LOGOUT",
         "UPLOAD",

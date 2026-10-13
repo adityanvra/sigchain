@@ -23,8 +23,16 @@ export const env = {
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || "7d",
 
   MONGODB_URI,
+  SMTP_HOST: process.env.SMTP_HOST?.trim() || "",
+  SMTP_PORT: asInt(process.env.SMTP_PORT, 587),
+  SMTP_SECURE: process.env.SMTP_SECURE === "true",
+  SMTP_USER: process.env.SMTP_USER || "",
+  SMTP_PASSWORD: process.env.SMTP_PASSWORD || "",
+  SMTP_FROM: process.env.SMTP_FROM?.trim() || "",
 
   SEPOLIA_RPC_URL,
+  // Server-only transaction wallet. Never expose this through config() or VITE_*.
+  BLOCKCHAIN_PRIVATE_KEY: process.env.BLOCKCHAIN_PRIVATE_KEY?.trim() || "",
   CHAIN_ID: asInt(process.env.CHAIN_ID, 11155111),
   CONTRACT_ADDRESS,
   BLOCK_EXPLORER: process.env.BLOCK_EXPLORER || "https://sepolia.etherscan.io",

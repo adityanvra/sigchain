@@ -1,7 +1,7 @@
 import { NextFunction, Request, Response } from "express";
 import { verifyToken, JwtPayload } from "../utils/jwt";
 import { ApiError } from "../utils/ApiError";
-import { UserRole } from "../models/User";
+import { User, UserRole } from "../models/User";
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -13,7 +13,7 @@ declare global {
 }
 
 /** Requires a valid Bearer JWT. Attaches the decoded payload to req.user. */
-export function authenticate(req: Request, _res: Response, next: NextFunction) {
+export async function authenticate(req: Request, _res: Response, next: NextFunction) {
   const header = req.headers.authorization;
   const token =
     header && header.startsWith("Bearer ")
@@ -26,6 +26,11 @@ export function authenticate(req: Request, _res: Response, next: NextFunction) {
 
   try {
     req.user = verifyToken(token);
+    const account = await User.findById(req.user.sub).select("role nama email");
+    if (!account) return next(ApiError.unauthorized("Akun tidak ditemukan"));
+    req.user.role = account.role;
+    req.user.nama = account.nama;
+    req.user.email = account.email;
     next();
   } catch {
     next(ApiError.unauthorized("Invalid or expired token"));

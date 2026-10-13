@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
 
+import type { VerifyResult } from "@/types";
+
 export function PublicVerifyPage() {
   const { hash } = useParams<{ hash?: string }>();
 
@@ -16,6 +18,7 @@ export function PublicVerifyPage() {
   const [resolvedHash, setResolvedHash] = useState<string | undefined>(
     isHash ? hash : undefined
   );
+  const [resolvedResult, setResolvedResult] = useState<VerifyResult | null>(null);
   const [loadingDocId, setLoadingDocId] = useState(!!isDocumentId);
 
   useEffect(() => {
@@ -25,9 +28,8 @@ export function PublicVerifyPage() {
       setLoadingDocId(true);
       try {
         const { data } = await api.get(`/verify/document/${hash}`);
-        if (data.hash) {
-          setResolvedHash(data.hash);
-        }
+        setResolvedResult(data);
+        setResolvedHash(data.referenceHash || undefined);
       } catch {
         /* silently fail — VerifyPanel will handle error state */
       } finally {
@@ -71,7 +73,7 @@ export function PublicVerifyPage() {
             <span className="text-sm">Mengambil data dokumen dari blockchain…</span>
           </div>
         ) : (
-          <VerifyPanel initialHash={resolvedHash} />
+          <VerifyPanel initialHash={resolvedHash} referenceId={isDocumentId ? hash : undefined} initialResult={resolvedResult} />
         )}
       </main>
     </div>

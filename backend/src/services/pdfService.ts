@@ -1,4 +1,4 @@
-import { PDFDocument, PDFPage } from "pdf-lib";
+import { PDFDocument, PDFPage, StandardFonts, rgb } from "pdf-lib";
 
 export interface ApplySignatureParams {
   pdfBuffer: Buffer;
@@ -67,7 +67,10 @@ export async function applySignatureToPdf(params: ApplySignatureParams): Promise
   }
 
   const targetPage: PDFPage = pages[pageIndex];
-  const { height: pageHeight } = targetPage.getSize();
+  const { height: pageHeight, width: pageWidth } = targetPage.getSize();
+  if (x < 0 || y < 0 || x + width > pageWidth || y + height > pageHeight) {
+    throw new Error("Area tanda tangan harus berada di dalam halaman PDF");
+  }
 
   // Create clean, dedicated Uint8Array with byteOffset === 0
   const dedicatedSig = toDedicatedUint8Array(signatureImageBuffer);
@@ -120,4 +123,19 @@ export async function getPdfPageSizes(
 ): Promise<Array<{ width: number; height: number }>> {
   const pdfDoc = await PDFDocument.load(pdfBuffer, { ignoreEncryption: true });
   return pdfDoc.getPages().map((p) => p.getSize());
+}
+
+/** Embed a stable document-reference QR before computing the final PDF hash. */
+export async function addVerificationPage(pdfBuffer: Buffer, qrBuffer: Buffer, verifyUrl: string): Promise<Buffer> {
+  const pdf = await PDFDocument.load(toDedicatedUint8Array(pdfBuffer));
+  const page = pdf.addPage([595, 842]);
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  page.drawText("Verifikasi Dokumen SIGCHAIN-UAD", { x: 48, y: 760, size: 18, font });
+  const qr = await pdf.embedPng(toDedicatedUint8Array(qrBuffer));
+  page.drawImage(qr, { x: 48, y: 555, width: 160, height: 160 });
+  page.drawText("Pindai QR untuk membuka catatan dokumen referensi.", { x: 48, y: 520, size: 11, font });
+  page.drawText("Unggah PDF yang Anda terima untuk memeriksa kesesuaian berkas.", { x: 48, y: 498, size: 11, font });
+  const lines = verifyUrl.match(/.{1,70}/g) || [];
+  lines.forEach((line, i) => page.drawText(line, { x: 48, y: 460 - i * 16, size: 9, font, color: rgb(0.2, 0.2, 0.2) }));
+  return Buffer.from(await pdf.save());
 }

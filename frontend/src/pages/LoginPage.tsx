@@ -29,7 +29,7 @@ export function LoginPage() {
     }
   }
 
-  function fill(role: "admin" | "akademik" | "administrasi") {
+  function fill(role: "admin" | "akademik" | "administrasi" | "mahasiswa") {
     setEmail(`${role}@uad.ac.id`);
     setPassword("password123");
   }
@@ -53,14 +53,14 @@ export function LoginPage() {
             Tanda Tangan Elektronik &amp; Verifikasi Dokumen Berbasis Blockchain
           </h1>
           <p className="max-w-md text-primary-foreground/80">
-            Menjaga integritas, keaslian, dan validitas dokumen akademik &amp; administrasi
-            Universitas Ahmad Dahlan melalui hash SHA-256 yang diabadikan di Ethereum.
+            Mengelola pengajuan dan persetujuan dokumen akademik &amp; administrasi
+            Universitas Ahmad Dahlan, serta memeriksa kesesuaian PDF dengan hash yang tercatat di Ethereum.
           </p>
           <div className="grid gap-3">
             {[
-              { icon: FileLock2, t: "Integritas dokumen terjamin SHA-256" },
-              { icon: Fingerprint, t: "Tanda tangan via MetaMask wallet" },
-              { icon: ShieldCheck, t: "Verifikasi publik & audit trail abadi" },
+              { icon: FileLock2, t: "Pemeriksaan keutuhan PDF dengan SHA-256" },
+              { icon: Fingerprint, t: "Pengesahan dokumen tanpa wallet pribadi" },
+              { icon: ShieldCheck, t: "Verifikasi publik & riwayat aktivitas aplikasi" },
             ].map((f) => (
               <div key={f.t} className="flex items-center gap-3 text-sm">
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/15">
@@ -132,7 +132,8 @@ export function LoginPage() {
 
           <div className="space-y-2">
             <p className="text-center text-xs text-muted-foreground">Akun demo (klik untuk isi)</p>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
+              <Button variant="outline" size="sm" onClick={() => fill("mahasiswa")}>Mahasiswa</Button>
               <Button variant="outline" size="sm" onClick={() => fill("admin")}>
                 Admin
               </Button>
