@@ -131,7 +131,6 @@ export function LoginPage() {
           </form>
 
           <div className="space-y-2">
-            <p className="text-center text-xs text-muted-foreground">Akun demo (klik untuk isi)</p>
             <div className="grid grid-cols-2 gap-2">
               <Button variant="outline" size="sm" onClick={() => fill("mahasiswa")}>Mahasiswa</Button>
               <Button variant="outline" size="sm" onClick={() => fill("admin")}>
